@@ -1,0 +1,8 @@
+# runtime state (created on first run — your download list lives here)
+data/
+
+# OS / editor junk
+Thumbs.db
+desktop.ini
+.DS_Store
+*.log

@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "downloadX Connector",
+  "version": "1.0.0",
+  "description": "Send links, media and browser downloads to downloadX (localhost).",
+  "permissions": ["contextMenus", "downloads", "storage", "activeTab"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "downloadX — click to toggle download interception" }
+}

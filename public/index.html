@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>downloadX</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-logo"><svg viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2z"/></svg></div>
+      <div class="brand-text">
+        <span class="brand-name">download<b>X</b></span>
+        <span class="brand-sub">Download Manager</span>
+      </div>
+    </div>
+
+    <nav id="nav-views">
+      <div class="nav-label">Downloads</div>
+      <button class="nav-item active" data-view="all"><span class="nav-ico" data-ico="all"></span><span class="nav-text">All</span><span class="nav-count" data-count="view-all">0</span></button>
+      <button class="nav-item" data-view="downloading"><span class="nav-ico" data-ico="down"></span><span class="nav-text">Downloading</span><span class="nav-count" data-count="view-downloading">0</span></button>
+      <button class="nav-item" data-view="waiting"><span class="nav-ico" data-ico="clock"></span><span class="nav-text">Waiting</span><span class="nav-count" data-count="view-waiting">0</span></button>
+      <button class="nav-item" data-view="completed"><span class="nav-ico" data-ico="check"></span><span class="nav-text">Completed</span><span class="nav-count" data-count="view-completed">0</span></button>
+      <button class="nav-item" data-view="failed"><span class="nav-ico" data-ico="xcirc"></span><span class="nav-text">Failed</span><span class="nav-count" data-count="view-failed">0</span></button>
+    </nav>
+
+    <nav id="nav-cats">
+      <div class="nav-label">Categories</div>
+      <button class="nav-item active" data-cat="all"><span class="nav-ico" data-ico="folder"></span><span class="nav-text">All categories</span><span class="nav-count" data-count="cat-all">0</span></button>
+      <button class="nav-item" data-cat="Programs"><span class="nav-cat c-program" data-ico="program"></span><span class="nav-text">Programs</span><span class="nav-count" data-count="cat-Programs">0</span></button>
+      <button class="nav-item" data-cat="Compressed"><span class="nav-cat c-archive" data-ico="archive"></span><span class="nav-text">Compressed</span><span class="nav-count" data-count="cat-Compressed">0</span></button>
+      <button class="nav-item" data-cat="Video"><span class="nav-cat c-video" data-ico="film"></span><span class="nav-text">Video</span><span class="nav-count" data-count="cat-Video">0</span></button>
+      <button class="nav-item" data-cat="Music"><span class="nav-cat c-music" data-ico="music"></span><span class="nav-text">Music</span><span class="nav-count" data-count="cat-Music">0</span></button>
+      <button class="nav-item" data-cat="Documents"><span class="nav-cat c-doc" data-ico="doc"></span><span class="nav-text">Documents</span><span class="nav-count" data-count="cat-Documents">0</span></button>
+      <button class="nav-item" data-cat="Images"><span class="nav-cat c-image" data-ico="image"></span><span class="nav-text">Images</span><span class="nav-count" data-count="cat-Images">0</span></button>
+      <button class="nav-item" data-cat="Others"><span class="nav-cat c-box" data-ico="box"></span><span class="nav-text">Others</span><span class="nav-count" data-count="cat-Others">0</span></button>
+    </nav>
+
+    <div class="side-foot">
+      <button class="side-setting" id="btn-settings"><span class="nav-ico" data-ico="gear"></span><span class="nav-text">Settings</span></button>
+      <div class="side-version">downloadX v1.0</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="view-info">
+        <h1 id="view-title">All downloads</h1>
+        <span id="view-sub" class="view-sub">0 items</span>
+      </div>
+      <input id="search" class="input search" type="search" placeholder="Search…  (Ctrl+F)">
+      <div class="speed-widget" title="Total speed across all transfers">
+        <canvas id="spark" width="150" height="36"></canvas>
+        <div class="speed-num"><b id="global-speed">0 B</b><i>/s</i></div>
+      </div>
+      <div class="top-actions">
+        <button class="btn ghost" id="btn-pause-all" title="Pause everything"><span class="ic" data-ico="pause"></span>Pause all</button>
+        <button class="btn ghost" id="btn-resume-all" title="Resume everything"><span class="ic" data-ico="play"></span>Resume all</button>
+        <button class="btn primary" id="btn-add"><span class="ic" data-ico="plus"></span>New download</button>
+      </div>
+    </header>
+
+    <div class="content">
+      <div id="shutdown-banner" class="banner hidden">
+        <span class="ic" data-ico="alert"></span>
+        <span>All downloads finished — <b>system shutdown in 60&nbsp;s</b></span>
+        <button class="btn danger" id="btn-cancel-shutdown">Cancel shutdown</button>
+      </div>
+
+      <section id="list" class="list"></section>
+
+      <div id="empty" class="empty hidden">
+        <div class="big"><span class="ic" data-ico="download"></span></div>
+        <h2>Nothing here yet</h2>
+        <p>Add a URL, paste a link anywhere (Ctrl+V), or install the browser extension.<br>
+           Sequential patterns work too: <code>https://site/file[01-12].zip</code></p>
+        <button class="btn primary" id="btn-add-empty"><span class="ic" data-ico="plus"></span>New download</button>
+      </div>
+    </div>
+
+    <footer class="statusbar">
+      <div class="st-left"><span class="st-dot" id="st-dot"></span><span id="st-engine">Engine ready</span></div>
+      <div class="st-right">
+        <span id="st-act">0 active · 0 waiting</span>
+        <span class="st-sep">|</span>
+        <span id="st-total">0 completed</span>
+      </div>
+    </footer>
+  </main>
+</div>
+
+<!-- Add dialog -->
+<dialog id="dlg-add" class="dlg">
+  <div class="dlg-head">
+    <div class="dlg-tile"><span class="ic" data-ico="plus"></span></div>
+    <div><div class="dlg-title">New download</div><div class="dlg-sub">Paste URLs, batch patterns or mirror lists</div></div>
+  </div>
+  <div class="dlg-body">
+    <label class="field">
+      <span>URL(s) — one per line, patterns supported</span>
+      <textarea id="add-urls" class="input" rows="3" placeholder="https://example.com/file.zip&#10;https://site.com/photos/img[01-20].jpg" autofocus></textarea>
+      <div class="hint" id="add-preview"></div>
+    </label>
+    <div class="grid2">
+      <label class="field"><span>Filename (optional, single URL)</span>
+        <input id="add-filename" class="input" placeholder="auto-detect"></label>
+      <label class="field"><span>Category</span>
+        <select id="add-category" class="input select">
+          <option value="auto">Auto-detect</option>
+          <option>Programs</option><option>Compressed</option><option>Video</option>
+          <option>Music</option><option>Documents</option><option>Images</option><option>Others</option>
+        </select></label>
+      <label class="field"><span>Connections <b id="add-segv">16</b></span>
+        <input id="add-segments" type="range" min="1" max="64" value="16"></label>
+      <label class="field"><span>Speed limit (KB/s, 0 = none)</span>
+        <input id="add-limit" class="input" type="number" min="0" value="0"></label>
+    </div>
+    <details class="advanced">
+      <summary>Advanced</summary>
+      <label class="field"><span>Mirror URLs (one per line — used automatically if the primary fails)</span>
+        <textarea id="add-mirrors" class="input" rows="2" placeholder="https://mirror.example.com/file.zip"></textarea></label>
+      <label class="field"><span>Referer (some sites require it)</span>
+        <input id="add-referer" class="input" placeholder="https://example.com/page.html"></label>
+      <label class="check"><input type="checkbox" id="add-paused"> Add paused (download later)</label>
+    </details>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn ghost" id="add-cancel">Cancel</button>
+    <button class="btn primary" id="add-ok"><span class="ic" data-ico="plus"></span>Add</button>
+  </div>
+</dialog>
+
+<!-- Settings dialog -->
+<dialog id="dlg-settings" class="dlg">
+  <div class="dlg-head">
+    <div class="dlg-tile"><span class="ic" data-ico="gear"></span></div>
+    <div><div class="dlg-title">Settings</div><div class="dlg-sub">Engine, folders, schedule and power</div></div>
+  </div>
+  <div class="dlg-body">
+    <div class="grid2">
+      <label class="field span2"><span>Download folder</span>
+        <input id="set-root" class="input" placeholder="C:\Users\you\Downloads"></label>
+      <label class="field"><span>Max simultaneous downloads</span>
+        <input id="set-concurrent" class="input" type="number" min="1" max="20" value="3"></label>
+      <label class="field"><span>Default connections per file</span>
+        <input id="set-segments" class="input" type="number" min="1" max="64" value="16"></label>
+      <label class="field"><span>Global speed limit (KB/s, 0 = none)</span>
+        <input id="set-globallimit" class="input" type="number" min="0" value="0"></label>
+      <label class="check span2"><input type="checkbox" id="set-organize"> Sort files into category folders</label>
+    </div>
+    <fieldset class="fieldset">
+      <legend>Schedule — download only inside this window</legend>
+      <label class="check"><input type="checkbox" id="set-sched-enabled"> Enable schedule</label>
+      <div class="grid2">
+        <label class="field"><span>From (HH:MM)</span><input id="set-sched-from" class="input" type="time" value="23:00"></label>
+        <label class="field"><span>To (HH:MM)</span><input id="set-sched-to" class="input" type="time" value="07:00"></label>
+      </div>
+    </fieldset>
+    <label class="check danger"><input type="checkbox" id="set-shutdown"> Shut down computer when all downloads finish</label>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn ghost" id="set-cancel">Cancel</button>
+    <button class="btn primary" id="set-ok">Save</button>
+  </div>
+</dialog>
+
+<!-- Confirm dialog -->
+<dialog id="dlg-confirm" class="dlg dlg-sm">
+  <div class="dlg-head">
+    <div class="dlg-tile danger"><span class="ic" data-ico="alert"></span></div>
+    <div><div class="dlg-title" id="confirm-title">Are you sure?</div><div class="dlg-sub confirm-text" id="confirm-text"></div></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn ghost" id="confirm-no">Cancel</button>
+    <button class="btn danger" id="confirm-yes">Delete</button>
+  </div>
+</dialog>
+
+<div id="toasts" class="toasts"></div>
+
+<script src="/app.js"></script>
+</body>
+</html>
