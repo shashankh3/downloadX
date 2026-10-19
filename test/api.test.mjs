@@ -70,11 +70,36 @@ const fileServer = http.createServer((req, res) => {
 await new Promise((r) => fileServer.listen(0, '127.0.0.1', r));
 const fileBase = `http://127.0.0.1:${fileServer.address().port}`;
 
+const PKG_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version;
+const updateServer = http.createServer((req, res) => {
+  const send = (obj) => {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(typeof obj === 'string' ? obj : JSON.stringify(obj));
+  };
+  if (req.url === '/newer.json') return send({ version: '99.0.0', url: 'https://example.com/downloadx-99.exe', notes: 'test release' });
+  if (req.url === '/same.json') return send({ version: PKG_VERSION });
+  if (req.url === '/bad.json') return send('not json');
+  res.writeHead(404);
+  res.end('no');
+});
+await new Promise((r) => updateServer.listen(0, '127.0.0.1', r));
+const updateBase = `http://127.0.0.1:${updateServer.address().port}`;
+
 const port = await freePort();
 const dataDir = path.join(TMP, 'data');
+const extDir = path.join(TMP, 'ext');
+fs.mkdirSync(extDir, { recursive: true });
+fs.writeFileSync(path.join(extDir, 'updates.xml'), "<?xml version='1.0'?><gupdate protocol='2.0'></gupdate>\n");
+fs.writeFileSync(path.join(extDir, 'downloadx.crx'), 'Cr24-test-package');
 const child = spawn(process.execPath, ['server.js'], {
   cwd: ROOT,
-  env: { ...process.env, DLX_PORT: String(port), DLX_DATA_DIR: dataDir },
+  env: {
+    ...process.env,
+    DLX_PORT: String(port),
+    DLX_DATA_DIR: dataDir,
+    DLX_EXT_DIR: extDir,
+    DLX_NO_OPEN: '1',
+  },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let logs = '';
@@ -162,6 +187,56 @@ try {
     check('security: encoded traversal blocked', trav2.status === 403 || trav2.status === 404, String(trav2.status));
     const index = await rawRequest(port, { path: '/' });
     check('static: index served with CSP', index.status === 200 && !!index.headers['content-security-policy']);
+  }
+
+  /* ---------------- extension hosting / install ---------------- */
+  {
+    const xml = await rawRequest(port, { path: '/ext/updates.xml' });
+    check('ext: updates.xml served', xml.status === 200 && xml.body.includes('<gupdate') && String(xml.headers['content-type']).startsWith('text/xml'));
+    const crx = await rawRequest(port, { path: '/ext/downloadx.crx' });
+    check('ext: crx served', crx.status === 200 && crx.headers['content-type'] === 'application/x-chrome-extension' && crx.body.length > 0);
+    const install = await api('/api/extension/install', { method: 'POST', body: {} });
+    check('ext: install endpoint', install.status === 200 && install.json.ok === true && install.json.mode === 'folder' && install.json.folder === extDir);
+    const portFile = path.join(dataDir, 'port');
+    check('ext: port file written', fs.existsSync(portFile) && fs.readFileSync(portFile, 'utf8').trim() === String(port));
+  }
+
+  /* ---------------- single instance lock ---------------- */
+  {
+    const health = await api('/api/health');
+    const lockFile = path.join(dataDir, '.server.lock');
+    let lock = null;
+    try { lock = JSON.parse(fs.readFileSync(lockFile, 'utf8')); } catch { /* missing */ }
+    check('instance: lock written', !!lock && lock.port === port && lock.instance === health.json.instance);
+    check('instance: lock records pid', !!lock && lock.pid === health.json.pid);
+
+    let secondLog = '';
+    const second = spawn(process.execPath, ['server.js'], {
+      cwd: ROOT,
+      env: {
+        ...process.env,
+        DLX_PORT: String(port),
+        DLX_DATA_DIR: dataDir,
+        DLX_EXT_DIR: extDir,
+        DLX_NO_OPEN: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    second.stdout.on('data', (d) => { secondLog += d; });
+    second.stderr.on('data', (d) => { secondLog += d; });
+    const secondExit = await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        try { second.kill(); } catch { /* gone */ }
+        resolve({ code: null, timedOut: true });
+      }, 15000);
+      second.on('exit', (code, signal) => {
+        clearTimeout(timer);
+        resolve({ code, signal, timedOut: false });
+      });
+    });
+    check('instance: second launch exits cleanly', !secondExit.timedOut && secondExit.code === 0, secondLog.trim());
+    check('instance: second launch reports existing server', /already running/i.test(secondLog), secondLog.trim());
+    check('instance: port file unchanged by second launch', fs.readFileSync(path.join(dataDir, 'port'), 'utf8').trim() === String(port));
   }
 
   /* ---------------- body validation ---------------- */
@@ -260,6 +335,28 @@ try {
     await api('/api/settings', { method: 'PUT', body: { rootDir: path.join(TMP, 'files') } });
   }
 
+  /* ---------------- update check ---------------- */
+  {
+    const none = await api('/api/update-check');
+    check('update: unconfigured reports no update', none.status === 200 && none.json.configured === false && none.json.updateAvailable === false);
+    const set = await api('/api/settings', { method: 'PUT', body: { updateUrl: updateBase + '/newer.json' } });
+    check('update: manifest URL accepted', set.status === 200 && set.json.updateUrl === updateBase + '/newer.json');
+    const newer = await api('/api/update-check');
+    check('update: newer version detected', newer.status === 200 && newer.json.updateAvailable === true && newer.json.latest === '99.0.0', JSON.stringify(newer.json));
+    check('update: download link and current version reported',
+      newer.json.url === 'https://example.com/downloadx-99.exe' && newer.json.current === PKG_VERSION);
+    const cached = await api('/api/update-check');
+    check('update: result cached', cached.json.checkedAt === newer.json.checkedAt);
+    await api('/api/settings', { method: 'PUT', body: { updateUrl: updateBase + '/same.json' } });
+    const same = await api('/api/update-check');
+    check('update: same version is not an update', same.status === 200 && same.json.updateAvailable === false && same.json.latest === PKG_VERSION);
+    await api('/api/settings', { method: 'PUT', body: { updateUrl: updateBase + '/bad.json' } });
+    const badManifest = await api('/api/update-check');
+    check('update: invalid manifest reported cleanly',
+      badManifest.status === 502 && badManifest.json.ok === false && /valid JSON/.test(badManifest.json.error));
+    await api('/api/settings', { method: 'PUT', body: { updateUrl: '' } });
+  }
+
   /* ---------------- actions / errors ---------------- */
   {
     const notFound = await api('/api/downloads/nope');
@@ -304,6 +401,8 @@ try {
     check('api: server exits gracefully', exited);
     const stateFile = path.join(dataDir, 'state.json');
     check('api: state persisted', fs.existsSync(stateFile) && !!JSON.parse(fs.readFileSync(stateFile, 'utf8')).settings);
+    check('ext: port file removed on quit', !fs.existsSync(path.join(dataDir, 'port')));
+    check('instance: lock removed on quit', !fs.existsSync(path.join(dataDir, '.server.lock')));
   }
 } catch (e) {
   console.error('\nTEST ERROR:', e.message);
@@ -311,6 +410,7 @@ try {
   results.push({ name: 'suite completed without throwing', ok: false });
 } finally {
   try { fileServer.close(); } catch { /* gone */ }
+  try { updateServer.close(); } catch { /* gone */ }
   try { child.kill(); } catch { /* already exited */ }
 }
 

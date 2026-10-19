@@ -1,5 +1,5 @@
 'use strict';
-/* downloadX UI — "Aurora" theme. Vanilla JS, live via SSE. */
+/* downloadX UI — light "day" + "Driver Booster" dark theme. Vanilla JS, live via SSE. */
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
@@ -39,6 +39,8 @@ const I = {
   download:S('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>'),
   copy:   S('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
   external:S('<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
+  sun:    S('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>'),
+  moon:   S('<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>'),
 };
 
 const CATS = {
@@ -138,12 +140,81 @@ function connect() {
 
 function applySnapshot(snap) {
   state = snap;
+  trackFinished(snap.items || []);
   updateHeader();
   updateCounts();
   renderList();
   const armed = !!state.shutdownArmed;
   $('#shutdown-banner').classList.toggle('hidden', !armed);
   if (armed) $('#shutdown-count').textContent = state.shutdownIn || 60;
+}
+
+/* ================= completion notifications ================= */
+const prevStatus = new Map();
+let audioCtx = null;
+
+function playDoneSound() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    audioCtx = audioCtx || new AC();
+    const t0 = audioCtx.currentTime;
+    [[880, 0], [1174.66, 0.12]].forEach(([freq, dt]) => {
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t0 + dt);
+      gain.gain.exponentialRampToValueAtTime(0.18, t0 + dt + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dt + 0.16);
+      osc.connect(gain).connect(audioCtx.destination);
+      osc.start(t0 + dt);
+      osc.stop(t0 + dt + 0.18);
+    });
+  } catch { /* audio unavailable */ }
+}
+
+function desktopNotify(title, body) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  try {
+    const n = new Notification(title, { body, icon: '/favicon.svg', tag: 'dlx-finished' });
+    n.onclick = () => { try { window.focus(); } catch { /* ignore */ } };
+  } catch { /* notifications blocked */ }
+}
+
+function trackFinished(items) {
+  const finished = [];
+  const failed = [];
+  const seen = new Set();
+  for (const it of items) {
+    seen.add(it.id);
+    const before = prevStatus.get(it.id);
+    if (before && before !== it.status) {
+      if (it.status === 'completed') finished.push(it);
+      else if (it.status === 'failed') failed.push(it);
+    }
+    prevStatus.set(it.id, it.status);
+  }
+  for (const id of prevStatus.keys()) if (!seen.has(id)) prevStatus.delete(id);
+  if (!finished.length && !failed.length) return;
+
+  const settings = state.settings || {};
+  const sr = $('#sr-status');
+  if (finished.length) {
+    const msg = finished.length === 1 ? `${finished[0].filename} finished downloading.` : `${finished.length} downloads finished.`;
+    toast(finished.length === 1 ? `Done: ${finished[0].filename}` : `${finished.length} downloads finished`, 'ok');
+    if (sr) sr.textContent = msg;
+    if (settings.notifications !== false) {
+      desktopNotify('downloadX', finished.length === 1 ? `${finished[0].filename} finished downloading.` : `${finished.length} downloads finished.`);
+    }
+    if (settings.notificationSound !== false) playDoneSound();
+  }
+  if (failed.length) {
+    const msg = failed.length === 1 ? `${failed[0].filename} failed: ${failed[0].error || 'unknown error'}` : `${failed.length} downloads failed.`;
+    toast(failed.length === 1 ? `Failed: ${failed[0].filename}` : `${failed.length} downloads failed`, 'err');
+    if (sr) sr.textContent = msg;
+    if (settings.notifications !== false) desktopNotify('downloadX', msg);
+  }
 }
 
 /* ================= header / spark / status bar ================= */
@@ -277,9 +348,20 @@ function buildRow() {
     barWrap: q('.bar-wrap'), segbar: q('.segbar'), pct: q('.pct'),
     actions: q('.raction'), details: q('.rdetails'), actionsFor: '', detailsBuilt: false,
   };
-  el_.querySelector('.row-main').addEventListener('click', (e) => {
+  const main = el_.querySelector('.row-main');
+  main.tabIndex = 0;
+  main.setAttribute('role', 'button');
+  main.setAttribute('aria-expanded', 'false');
+  main.addEventListener('click', (e) => {
     if (e.target.closest('.rbtn')) return;
     toggleDetails(el_.dataset.id);
+  });
+  main.addEventListener('keydown', (e) => {
+    if (e.target.closest('.rbtn')) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      toggleDetails(el_.dataset.id);
+    }
   });
   return row;
 }
@@ -302,9 +384,17 @@ function updateRow(row, it) {
     : it.status === 'failed' ? '!' : (pctVal > 0 ? pctVal.toFixed(pctVal >= 10 ? 0 : 1) + '%' : '');
 
   row.mstat.innerHTML = `<span class="dot ${it.status}"></span><span>${STATUS_LABEL[it.status] || it.status}</span>`;
-  row.msize.textContent = it.total > 0 ? `${fmtBytes(it.received)} / ${fmtBytes(it.total)}` : fmtBytes(it.received);
-  row.mspeed.textContent = it.status === 'downloading' ? fmtSpeed(it.speed) : '';
-  row.meta.textContent = it.status === 'downloading' && it.eta >= 0 ? 'ETA ' + fmtEta(it.eta) : '';
+  if (it.stream) {
+    row.msize.textContent = `${it.received} / ${it.total} parts`;
+    row.mspeed.textContent = it.status === 'downloading' ? fmtSpeed(it.speed) : '';
+    row.meta.textContent = it.status === 'downloading'
+      ? (it.stream === 'dash' ? 'DASH stream' : 'HLS stream')
+      : '';
+  } else {
+    row.msize.textContent = it.total > 0 ? `${fmtBytes(it.received)} / ${fmtBytes(it.total)}` : fmtBytes(it.received);
+    row.mspeed.textContent = it.status === 'downloading' ? fmtSpeed(it.speed) : '';
+    row.meta.textContent = it.status === 'downloading' && it.eta >= 0 ? 'ETA ' + fmtEta(it.eta) : '';
+  }
   row.merr.textContent = it.error || '';
   row.merr.title = it.error || '';
 
@@ -359,12 +449,29 @@ function updateRow(row, it) {
 
   const expanded = ui.expanded.has(it.id);
   row.details.style.display = expanded ? 'grid' : 'none';
+  const main = row.el.querySelector('.row-main');
+  if (main) main.setAttribute('aria-expanded', expanded ? 'true' : 'false');
   if (expanded) renderDetails(row, it);
   else row.detailsBuilt = false;
 }
 
 function renderSegbar(row, it) {
   const bar = row.segbar;
+  if (it.stream) {
+    row.barWrap.classList.remove('indeterminate');
+    if (bar.children.length !== 1) {
+      bar.textContent = '';
+      const s = el('div', 'seg');
+      s.appendChild(el('div', 'fill'));
+      bar.appendChild(s);
+    }
+    const segEl = bar.firstChild;
+    const pct = it.total > 0 ? Math.min(100, (it.received / it.total) * 100) : 0;
+    segEl.classList.toggle('done', it.status === 'completed');
+    segEl.classList.toggle('active', it.status === 'downloading');
+    segEl.firstChild.style.width = it.status === 'completed' ? '100%' : pct + '%';
+    return;
+  }
   const segs = it.segments || [];
   const indeterminate = it.total <= 0 && ['downloading', 'queued', 'paused', 'probing'].includes(it.status);
   row.barWrap.classList.toggle('indeterminate', indeterminate && segs.length === 0);
@@ -385,9 +492,10 @@ function renderSegbar(row, it) {
 
 function renderDetails(row, it) {
   const d = row.details;
+  const segList = it.segments || [];
   const sig = [it.id, it.status, it.error, it.expectedChecksum, it.checksumAlgo, it.speedLimit,
-    it.checksum && it.checksum.at, it.segments.length, it.segmentsWanted, it.completedAt,
-    it.activeConnections].join('|');
+    it.checksum && it.checksum.at, segList.length, it.segmentsWanted, it.completedAt,
+    it.activeConnections, it.stream, it.received, it.total].join('|');
   if (row.detailsSig === sig && d.childElementCount) return;
   if (row.detailsBuilt && d.contains(document.activeElement)) return;
   row.detailsBuilt = true;
@@ -403,9 +511,15 @@ function renderDetails(row, it) {
   dl('URL', el('span', 'mono', it.url));
   if (it.urls && it.urls.length > 1) dl('Mirrors', it.urls.slice(1).join(', '));
   dl('Saved to', el('span', 'mono', it.path));
-  const segCount = it.segments.length;
-  dl('Connections', `${it.activeConnections || 0} active / ${segCount} segment${segCount === 1 ? '' : 's'} (max ${it.segmentsWanted})`);
-  dl('Resumable', it.canResume ? 'Yes — validated with If-Range' : 'No — single stream');
+  if (it.stream) {
+    dl('Media stream', `${it.stream.toUpperCase()} — ${it.received} of ${it.total} parts`);
+    dl('Connections', '1 (sequential stream)');
+    if (it.stream === 'dash') dl('Audio track', el('span', 'mono', it.path.replace(/\.mp4$/i, '.audio.m4a')));
+  } else {
+    const segCount = segList.length;
+    dl('Connections', `${it.activeConnections || 0} active / ${segCount} segment${segCount === 1 ? '' : 's'} (max ${it.segmentsWanted})`);
+  }
+  dl('Resumable', it.canResume ? 'Yes' : 'No — single stream');
   if (it.expectedChecksum) dl('Expected hash', el('span', 'mono', it.expectedChecksum));
   if (it.error) dl('Error', el('span', 'mono', it.error));
 
@@ -465,6 +579,10 @@ function openAdd(prefill) {
   $('#add-mirrors').value = '';
   $('#add-referer').value = '';
   $('#add-cookies').value = '';
+  $('#add-username').value = '';
+  $('#add-password').value = '';
+  $('#add-proxy').value = '';
+  $('#add-headers').value = '';
   $('#add-checksum').value = '';
   $('#add-dir').value = '';
   $('#add-paused').checked = false;
@@ -504,6 +622,17 @@ $('#add-ok').addEventListener('click', async () => {
     mirrors: $('#add-mirrors').value.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean),
     referer: $('#add-referer').value.trim() || undefined,
     cookies: $('#add-cookies').value.trim() || undefined,
+    username: $('#add-username').value.trim() || undefined,
+    password: $('#add-password').value || undefined,
+    proxy: $('#add-proxy').value.trim() || undefined,
+    headers: (() => {
+      const out = {};
+      for (const line of $('#add-headers').value.split(/[\r\n]+/)) {
+        const m = /^([^:]+):\s*(.+)$/.exec(line.trim());
+        if (m) out[m[1].trim()] = m[2].trim();
+      }
+      return Object.keys(out).length ? out : undefined;
+    })(),
     expectedChecksum: $('#add-checksum').value.trim() || undefined,
     dir: $('#add-dir').value.trim() || undefined,
     startedPaused: $('#add-paused').checked,
@@ -528,11 +657,16 @@ function openSettings() {
   $('#set-concurrent').value = s.maxConcurrent ?? 3;
   $('#set-segments').value = s.defaultSegments ?? 16;
   $('#set-globallimit').value = s.globalSpeedLimit ? Math.round(s.globalSpeedLimit / 1024) : 0;
+  $('#set-proxy').value = s.proxy || '';
   $('#set-organize').checked = !!s.organizeByCategory;
+  $('#set-invalid-tls').checked = !!s.allowInvalidTls;
+  $('#set-update-url').value = s.updateUrl || '';
   $('#set-sched-enabled').checked = !!s.scheduleEnabled;
   $('#set-sched-from').value = s.scheduleFrom || '23:00';
   $('#set-sched-to').value = s.scheduleTo || '07:00';
   $('#set-shutdown').checked = !!s.shutdownWhenDone;
+  $('#set-notify').checked = s.notifications !== false;
+  $('#set-notify-sound').checked = s.notificationSound !== false;
   $('#dlg-settings').showModal();
 }
 $('#btn-settings').addEventListener('click', openSettings);
@@ -542,23 +676,48 @@ $('#set-ok').addEventListener('click', async () => {
     maxConcurrent: parseInt($('#set-concurrent').value, 10) || 3,
     defaultSegments: parseInt($('#set-segments').value, 10) || 16,
     globalSpeedLimit: (parseInt($('#set-globallimit').value, 10) || 0) * 1024,
+    proxy: $('#set-proxy').value.trim(),
     organizeByCategory: $('#set-organize').checked,
+    allowInvalidTls: $('#set-invalid-tls').checked,
+    updateUrl: $('#set-update-url').value.trim(),
     scheduleEnabled: $('#set-sched-enabled').checked,
     scheduleFrom: $('#set-sched-from').value,
     scheduleTo: $('#set-sched-to').value,
     shutdownWhenDone: $('#set-shutdown').checked,
+    notifications: $('#set-notify').checked,
+    notificationSound: $('#set-notify-sound').checked,
   };
   try {
+    if (body.notifications && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
     await api('/api/settings', { method: 'PUT', body });
     $('#dlg-settings').close();
     toast('Settings saved', 'ok');
   } catch (e) { toast(e.message, 'err'); }
 });
 $('#set-cancel').addEventListener('click', () => $('#dlg-settings').close());
+$('#set-extension').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  btn.disabled = true;
+  try {
+    const r = await api('/api/extension/install', { method: 'POST' });
+    toast(r.mode === 'store' ? 'Opening the browser add-on store…' : 'Opening the extension folder…', 'ok');
+  } catch (err) {
+    toast(err.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 /* ================= sidebar / toolbar ================= */
 function setNav(container, attr, value) {
-  $$(container + ' .nav-item').forEach((b) => b.classList.toggle('active', b.dataset[attr] === value));
+  $$(container + ' .nav-item').forEach((b) => {
+    const on = b.dataset[attr] === value;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
 }
 $('#nav-views').addEventListener('click', (e) => {
   const b = e.target.closest('.nav-item');
@@ -618,7 +777,7 @@ window.addEventListener('drop', (e) => {
   dragDepth = 0;
   $('#dropzone').classList.add('hidden');
   const text = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '';
-  const urls = text.split(/[\r\n]+/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
+  const urls = text.split(/[\r\n]+/).map((s) => s.trim()).filter((s) => /^(https?|ftps?):\/\//i.test(s));
   if (urls.length) openAdd(urls.join('\n'));
 });
 
@@ -636,13 +795,56 @@ document.addEventListener('paste', (e) => {
   if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
   if ($('#dlg-add').open) return;
   const text = (e.clipboardData || window.clipboardData).getData('text') || '';
-  const url = text.split(/[\r\n]+/).map((s) => s.trim()).find((s) => /^https?:\/\//i.test(s));
+  const url = text.split(/[\r\n]+/).map((s) => s.trim()).find((s) => /^(https?|ftps?):\/\//i.test(s));
   if (url) openAdd(url);
 });
 
+/* ================= theme ================= */
+const THEME_KEY = 'dlx-theme';
+function applyTheme(theme) {
+  const dark = theme === 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  const btn = $('#btn-theme');
+  if (!btn) return;
+  btn.querySelector('.nav-ico').innerHTML = dark ? I.sun : I.moon;
+  $('#theme-label').textContent = dark ? 'Light mode' : 'Dark mode';
+  btn.title = dark ? 'Switch to the light theme' : 'Switch to the dark theme';
+}
+let savedTheme = 'light';
+try { savedTheme = localStorage.getItem(THEME_KEY) || 'light'; } catch { /* private mode */ }
+applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
+$('#btn-theme').addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode */ }
+  applyTheme(next);
+});
+
+/* ================= update check ================= */
+async function checkUpdates() {
+  try {
+    const r = await api('/api/update-check');
+    if (!r.updateAvailable || !r.latest) return;
+    let dismissed = '';
+    try { dismissed = localStorage.getItem('dlx-update-dismissed') || ''; } catch { /* private mode */ }
+    if (dismissed === r.latest) return;
+    $('#update-version').textContent = 'v' + r.latest;
+    const link = $('#update-link');
+    if (r.url) link.href = r.url;
+    else link.hidden = true;
+    $('#update-banner').classList.remove('hidden');
+    $('#update-dismiss').onclick = () => {
+      try { localStorage.setItem('dlx-update-dismissed', r.latest); } catch { /* private mode */ }
+      $('#update-banner').classList.add('hidden');
+    };
+  } catch { /* update check unavailable */ }
+}
+
 /* ================= boot ================= */
+setNav('#nav-views', 'view', ui.view);
+setNav('#nav-cats', 'cat', ui.cat);
 refreshViewTitle();
 connect();
+checkUpdates();
 fetch('/api/health').then((r) => r.json()).then((h) => {
   if (h && h.version && $('#side-version')) $('#side-version').textContent = 'downloadX v' + h.version;
 }).catch(() => {});

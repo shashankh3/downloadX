@@ -1,6 +1,18 @@
 # runtime state (created on first run — your download list lives here)
 data/
 
+# generated extension packages, keys and installer state
+extension/chrome/
+extension/firefox/
+extension/downloadx.crx
+extension/updates.xml
+extension/build-info.json
+*.pem
+install.json
+
+# compiled native messaging host
+native/*.exe
+
 # OS / editor junk
 Thumbs.db
 desktop.ini
@@ -11,3 +23,6 @@ desktop.ini
 node_modules/
 coverage/
 *.tmp
+
+# standalone executable builds
+dist/

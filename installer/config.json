@@ -1,0 +1,14 @@
+{
+  "extension": {
+    "mode": "auto",
+    "chromeStoreId": "",
+    "edgeStoreId": "",
+    "firefoxAddonId": "downloadx@local",
+    "firefoxInstallUrl": ""
+  },
+  "install": {
+    "allUsers": false,
+    "autostart": true,
+    "installNode": false
+  }
+}

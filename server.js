@@ -6,21 +6,150 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Engine, normalizeSettings } = require('./lib/engine');
 const { expandPatternDetailed } = require('./lib/patterns');
+const { InstanceLock, writePortFile, removePortFile } = require('./lib/instance');
+const httpget = require('./lib/httpget');
 
 const VERSION = require('./package.json').version;
+
+/* ---------------- update check ---------------- */
+const UPDATE_TTL_MS = 6 * 60 * 60 * 1000;
+let updateCache = { url: '', at: 0, data: null };
+
+function compareVersions(a, b) {
+  const pa = String(a || '').replace(/^v/i, '').split(/[.-]/).map((n) => parseInt(n, 10) || 0);
+  const pb = String(b || '').replace(/^v/i, '').split(/[.-]/).map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
+function readLimited(stream, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    stream.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        stream.destroy();
+        reject(new Error('Update manifest is too large'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    stream.on('end', () => resolve(Buffer.concat(chunks)));
+    stream.on('error', reject);
+  });
+}
+
+async function checkForUpdate() {
+  const url = String(engine.settings.updateUrl || '').trim();
+  const base = { configured: !!url, current: VERSION, latest: VERSION, updateAvailable: false, url: '', notes: '' };
+  if (!url) return base;
+  const at = Date.now();
+  if (updateCache.url === url && updateCache.data && at - updateCache.at < UPDATE_TTL_MS) return updateCache.data;
+  const r = await httpget.request(url, {
+    timeoutMs: 8000,
+    headers: { accept: 'application/json' },
+    proxy: engine.settings.proxy,
+    rejectUnauthorized: !engine.settings.allowInvalidTls,
+  });
+  if (r.res.statusCode !== 200) throw new Error('Update check failed: HTTP ' + r.res.statusCode);
+  const body = await readLimited(r.res, 262144);
+  let data;
+  try { data = JSON.parse(body.toString('utf8')); } catch { throw new Error('Update manifest is not valid JSON'); }
+  const latest = String(data.version || '').trim().replace(/^v/i, '');
+  if (!/^\d+(\.\d+)*$/.test(latest)) throw new Error('Update manifest has no valid version');
+  const result = {
+    configured: true,
+    current: VERSION,
+    latest,
+    updateAvailable: compareVersions(latest, VERSION) > 0,
+    url: /^https?:\/\//i.test(String(data.url || '')) ? String(data.url) : '',
+    notes: String(data.notes || '').slice(0, 500),
+    checkedAt: at,
+  };
+  updateCache = { url, at, data: result };
+  return result;
+}
 const HOST = process.env.DLX_HOST || '127.0.0.1';
 const PORT = parseInt(process.env.DLX_PORT, 10) || 9765;
 const MAX_PORT_TRIES = process.env.DLX_PORT ? 0 : 10;
+const INSTANCE_ID = crypto.randomUUID();
+const IS_PKG = !!process.pkg;
 const ROOT = __dirname;
+const EXE_DIR = IS_PKG ? path.dirname(process.execPath) : ROOT;
 const PUBLIC = path.join(ROOT, 'public');
-const DATA_DIR = process.env.DLX_DATA_DIR ? path.resolve(process.env.DLX_DATA_DIR) : path.join(ROOT, 'data');
+const EXT_DIR = process.env.DLX_EXT_DIR ? path.resolve(process.env.DLX_EXT_DIR) : path.join(EXE_DIR, 'extension');
+const DATA_DIR = process.env.DLX_DATA_DIR ? path.resolve(process.env.DLX_DATA_DIR) : path.join(EXE_DIR, 'data');
+if (IS_PKG && process.env.DLX_OPEN === undefined && process.env.DLX_NO_OPEN !== '1') process.env.DLX_OPEN = '1';
 
-const engine = new Engine(DATA_DIR);
-engine.on('shutdown-armed', ({ at }) => armShutdown(at));
-engine.on('shutdown-cancelled', () => disarmShutdown());
+function copyExtensionFiles(src, dst, overwrite) {
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const from = path.join(src, entry.name);
+    const to = path.join(dst, entry.name);
+    if (entry.isDirectory()) {
+      fs.mkdirSync(to, { recursive: true });
+      copyExtensionFiles(from, to, false);
+    } else if (entry.isFile() && (overwrite || !fs.existsSync(to))) {
+      fs.copyFileSync(from, to);
+    }
+  }
+}
+
+function ensurePortableExtension() {
+  if (!IS_PKG || process.env.DLX_EXT_DIR) return;
+  try {
+    const src = path.join(ROOT, 'extension');
+    if (!fs.existsSync(src)) return;
+    fs.mkdirSync(EXT_DIR, { recursive: true });
+    copyExtensionFiles(src, EXT_DIR, true);
+  } catch (e) {
+    console.error('[downloadX] could not prepare portable extension folder:', e.message);
+  }
+}
+
+function readJsonSafe(file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+}
+
+const EXT_CONFIG = (() => {
+  const candidates = [
+    process.env.DLX_EXT_CONFIG,
+    path.join(ROOT, 'extension-config.json'),
+    path.join(ROOT, 'installer', 'config.json'),
+  ].filter(Boolean);
+  for (const file of candidates) {
+    const parsed = readJsonSafe(file);
+    if (parsed) return parsed.extension || parsed;
+  }
+  return {};
+})();
+const EXT_MODE = process.env.DLX_EXT_MODE || EXT_CONFIG.mode || 'auto';
+const CHROME_STORE_ID = process.env.DLX_CHROME_STORE_ID || EXT_CONFIG.chromeStoreId || '';
+const EDGE_STORE_ID = process.env.DLX_EDGE_STORE_ID || EXT_CONFIG.edgeStoreId || '';
+const FIREFOX_ID = process.env.DLX_FIREFOX_ID || EXT_CONFIG.firefoxAddonId || 'downloadx@local';
+
+function extensionFolder() {
+  const built = path.join(EXT_DIR, 'chrome');
+  return fs.existsSync(path.join(built, 'manifest.json')) ? built : EXT_DIR;
+}
+
+let engine = null;
+let instanceLock = null;
+let boundPort = 0;
+let shuttingDown = false;
+
+function startEngine() {
+  engine = new Engine(DATA_DIR);
+  engine.on('shutdown-armed', ({ at }) => armShutdown(at));
+  engine.on('shutdown-cancelled', () => disarmShutdown());
+}
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -32,6 +161,8 @@ const MIME = {
   '.json': 'application/json',
   '.webmanifest': 'application/manifest+json',
   '.woff2': 'font/woff2',
+  '.crx': 'application/x-chrome-extension',
+  '.xml': 'text/xml; charset=utf-8',
 };
 
 const SECURITY_HEADERS = {
@@ -180,10 +311,43 @@ function serveStatic(req, res, pathname) {
     }
     res.writeHead(200, headers);
     if (req.method === 'HEAD') return res.end();
+    if (IS_PKG) {
+      try { res.end(fs.readFileSync(file)); } catch { try { res.destroy(); } catch { /* gone */ } }
+      return;
+    }
     const stream = fs.createReadStream(file);
     stream.on('error', () => { try { res.destroy(); } catch { /* gone */ } });
     stream.pipe(res);
   });
+}
+
+function serveExtensionFile(req, res, pathname) {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.writeHead(405, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
+    return res.end('Method not allowed');
+  }
+  const isCrx = pathname.endsWith('.crx');
+  const file = path.join(EXT_DIR, isCrx ? 'downloadx.crx' : 'updates.xml');
+  let stat;
+  try { stat = fs.statSync(file); } catch { stat = null; }
+  if (!stat || !stat.isFile()) {
+    res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
+    return res.end('Extension package not built. Run the installer or node installer/prepare-extension.mjs');
+  }
+  res.writeHead(200, {
+    'Content-Type': isCrx ? 'application/x-chrome-extension' : 'text/xml; charset=utf-8',
+    'Content-Length': stat.size,
+    'Cache-Control': 'no-store',
+    ...SECURITY_HEADERS,
+  });
+  if (req.method === 'HEAD') return res.end();
+  if (IS_PKG) {
+    try { res.end(fs.readFileSync(file)); } catch { try { res.destroy(); } catch { /* gone */ } }
+    return;
+  }
+  const stream = fs.createReadStream(file);
+  stream.on('error', () => { try { res.destroy(); } catch { /* gone */ } });
+  stream.pipe(res);
 }
 
 /* ---------------- SSE ---------------- */
@@ -191,7 +355,7 @@ const sseClients = new Set();
 let lastPing = 0;
 
 setInterval(() => {
-  if (!sseClients.size) return;
+  if (!engine || !sseClients.size) return;
   let payload = null;
   try {
     if (engine.dirty) {
@@ -216,12 +380,20 @@ async function handleApi(req, res, pathname, query) {
 
   if (pathname === '/api/health') {
     return json(res, 200, {
-      ok: true, version: VERSION, uptime: Math.round(process.uptime()),
+      ok: true, instance: INSTANCE_ID, version: VERSION, uptime: Math.round(process.uptime()),
       pid: process.pid, platform: process.platform, node: process.version,
     });
   }
 
   if (pathname === '/api/state') return json(res, 200, engine.snapshot());
+
+  if (pathname === '/api/update-check' && method === 'GET') {
+    try {
+      return json(res, 200, { ok: true, ...(await checkForUpdate()) });
+    } catch (e) {
+      return json(res, 502, { ok: false, error: e.message, current: VERSION });
+    }
+  }
 
   if (pathname === '/api/events') {
     res.writeHead(200, {
@@ -253,11 +425,11 @@ async function handleApi(req, res, pathname, query) {
     if (Array.isArray(body.urls)) urls = body.urls;
     else if (typeof body.url === 'string') urls = [body.url];
     else if (typeof body.text === 'string') urls = expandPatternDetailed(body.text).urls;
-    urls = urls.filter((u) => /^https?:\/\//i.test(String(u).trim())).map((u) => String(u).trim());
+    urls = urls.filter((u) => /^(https?|ftps?):\/\//i.test(String(u).trim())).map((u) => String(u).trim());
     urls = [...new Set(urls)];
-    if (!urls.length) return json(res, 400, { error: 'No valid http(s) URL supplied' });
+    if (!urls.length) return json(res, 400, { error: 'No valid http(s) or ftp(s) URL supplied' });
     const mirrors = Array.isArray(body.mirrors)
-      ? body.mirrors.filter((u) => /^https?:\/\//i.test(String(u))).map((u) => String(u).trim())
+      ? body.mirrors.filter((u) => /^(https?|ftps?):\/\//i.test(String(u))).map((u) => String(u).trim())
       : [];
     const base = {
       filename: typeof body.filename === 'string' ? body.filename : '',
@@ -266,6 +438,10 @@ async function handleApi(req, res, pathname, query) {
       speedLimitKBs: body.speedLimitKBs ? body.speedLimitKBs * 1024 : body.speedLimit,
       referer: body.referer,
       cookies: body.cookies,
+      headers: body.headers && typeof body.headers === 'object' && !Array.isArray(body.headers) ? body.headers : undefined,
+      username: typeof body.username === 'string' ? body.username : '',
+      password: typeof body.password === 'string' ? body.password : '',
+      proxy: typeof body.proxy === 'string' ? body.proxy : '',
       dir: body.dir,
       startedPaused: !!body.startedPaused,
       expectedChecksum: body.expectedChecksum || body.checksum || '',
@@ -352,7 +528,7 @@ async function handleApi(req, res, pathname, query) {
   if (pathname === '/api/settings' && method === 'GET') return json(res, 200, engine.settings);
   if (pathname === '/api/settings' && (method === 'PUT' || method === 'POST')) {
     const body = await readBody(req);
-    const allowed = ['rootDir', 'maxConcurrent', 'defaultSegments', 'globalSpeedLimit', 'organizeByCategory', 'scheduleEnabled', 'scheduleFrom', 'scheduleTo', 'shutdownWhenDone'];
+    const allowed = ['rootDir', 'maxConcurrent', 'defaultSegments', 'globalSpeedLimit', 'organizeByCategory', 'scheduleEnabled', 'scheduleFrom', 'scheduleTo', 'shutdownWhenDone', 'proxy', 'allowInvalidTls', 'notifications', 'notificationSound', 'updateUrl'];
     const patch = {};
     for (const k of allowed) if (k in body) patch[k] = body[k];
     engine.settings = normalizeSettings(patch, engine.settings);
@@ -371,9 +547,27 @@ async function handleApi(req, res, pathname, query) {
     const removed = await engine.clearFinished(!!body.deleteFiles);
     return json(res, 200, { removed });
   }
+  if (pathname === '/api/extension/install' && method === 'POST') {
+    const folder = extensionFolder();
+    const storeUrl = CHROME_STORE_ID
+      ? `https://chromewebstore.google.com/detail/${encodeURIComponent(CHROME_STORE_ID)}`
+      : '';
+    const mode = (EXT_MODE === 'store' || EXT_MODE === 'auto') && storeUrl ? 'store' : 'folder';
+    openPath(mode === 'store' ? storeUrl : folder, false);
+    return json(res, 200, {
+      ok: true,
+      mode,
+      storeUrl,
+      folder,
+      chromeStoreId: CHROME_STORE_ID,
+      edgeStoreId: EDGE_STORE_ID,
+      firefoxAddonId: FIREFOX_ID,
+      crx: fs.existsSync(path.join(EXT_DIR, 'downloadx.crx')),
+    });
+  }
   if (pathname === '/api/quit' && method === 'POST') {
     json(res, 200, { ok: true });
-    setTimeout(() => { engine.saveNow(); process.exit(0); }, 100);
+    setTimeout(() => shutdown(0), 100);
     return;
   }
 
@@ -381,6 +575,7 @@ async function handleApi(req, res, pathname, query) {
 }
 
 function openPath(target, select) {
+  if (process.env.DLX_NO_OPEN === '1') return;
   const child = (() => {
     if (process.platform === 'win32') {
       return select
@@ -421,6 +616,10 @@ const server = http.createServer((req, res) => {
     }
     res.writeHead(204, { ...headers, ...SECURITY_HEADERS });
     return res.end();
+  }
+  if (pathname === '/ext/updates.xml' || pathname === '/ext/downloadx.crx') {
+    serveExtensionFile(req, res, pathname);
+    return;
   }
   if (pathname.startsWith('/api/')) {
     const origin = req.headers.origin;
@@ -463,11 +662,25 @@ server.on('error', (e) => {
 });
 
 function shutdown(code = 0) {
-  engine.saveNow();
-  engine.close();
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try {
+    if (engine) {
+      engine.saveNow();
+      engine.close();
+    }
+  } catch (e) {
+    console.error('[downloadX] shutdown save failed:', e.message);
+  }
+  if (boundPort) removePortFile(DATA_DIR, boundPort);
+  if (instanceLock) instanceLock.release();
   for (const c of sseClients) { try { c.end(); } catch { /* gone */ } }
   sseClients.clear();
-  server.close(() => process.exit(code));
+  process.exitCode = code;
+  if (server.listening) {
+    server.close();
+    if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+  }
   setTimeout(() => process.exit(code), 1500).unref();
 }
 
@@ -475,21 +688,62 @@ process.on('SIGINT', () => shutdown(0));
 process.on('SIGTERM', () => shutdown(0));
 process.on('uncaughtException', (e) => {
   console.error('[downloadX] Uncaught exception:', e);
-  try { engine.saveNow(); } catch { /* best effort */ }
+  try { if (engine) engine.saveNow(); } catch { /* best effort */ }
 });
 process.on('unhandledRejection', (e) => {
   console.error('[downloadX] Unhandled rejection:', e && e.message ? e.message : e);
 });
+process.on('exit', () => {
+  if (instanceLock) instanceLock.release();
+});
 
-server.listen(PORT, HOST, () => {
-  const addr = server.address();
-  const boundPort = addr && typeof addr === 'object' ? addr.port : PORT;
-  const shown = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST;
-  const ui = `http://${shown.includes(':') ? `[${shown}]` : shown}:${boundPort}`;
-  console.log('');
-  console.log(`  downloadX v${VERSION} is running`);
-  console.log(`  UI  ->  ${ui}`);
-  console.log(`  Files -> ${engine.settings.rootDir}`);
-  console.log('');
-  if (process.env.DLX_OPEN === '1') openPath(ui, false);
+async function start() {
+  const lock = new InstanceLock({ dataDir: DATA_DIR, host: HOST, port: PORT, instance: INSTANCE_ID });
+  let claim;
+  try {
+    claim = await lock.acquire();
+  } catch (e) {
+    console.error('[downloadX] ' + e.message);
+    process.exit(1);
+  }
+
+  if (!claim.acquired) {
+    const shown = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST;
+    const ui = `http://${shown.includes(':') ? `[${shown}]` : shown}:${claim.port}/`;
+    console.log(`[downloadX] Already running at ${ui}`);
+    if (process.env.DLX_OPEN === '1') openPath(ui, false);
+    return;
+  }
+  if (shuttingDown) {
+    lock.release();
+    return;
+  }
+
+  instanceLock = lock;
+  ensurePortableExtension();
+  startEngine();
+  server.listen(PORT, HOST, () => {
+    const addr = server.address();
+    boundPort = addr && typeof addr === 'object' ? addr.port : PORT;
+    instanceLock.update(boundPort);
+    try {
+      writePortFile(DATA_DIR, boundPort);
+    } catch (e) {
+      console.error('[downloadX] could not write port file:', e.message);
+    }
+    const shown = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST;
+    const ui = `http://${shown.includes(':') ? `[${shown}]` : shown}:${boundPort}`;
+    console.log('');
+    console.log(`  downloadX v${VERSION} is running`);
+    console.log(`  UI  ->  ${ui}`);
+    console.log(`  Files -> ${engine.settings.rootDir}`);
+    console.log('');
+    if (process.env.DLX_OPEN === '1') openPath(ui, false);
+  });
+}
+
+start().catch((e) => {
+  console.error('[downloadX] startup failed:', e && e.message ? e.message : e);
+  if (instanceLock) instanceLock.release();
+  process.exit(1);
 });

@@ -1,13 +1,17 @@
 # downloadX ⚡
 
 A fast, modern, **zero-dependency** download manager for Windows (works anywhere Node.js runs).
-One command, no install wizard, no ads, no nags.
+No ads, no nags — run it portably with one command, or use the Windows installer for an
+IDM-style setup with shortcuts, autostart and automatic browser integration.
 
 ```
 node server.js        →  http://127.0.0.1:9765
 ```
 
-or just double-click **`start.bat`**.
+Double-click **`start.bat`** for the portable version, or **`install.bat`** for the full
+Windows installation. Downloads run over **HTTP, HTTPS, FTP and FTPS** with the same
+multi-connection engine, and **HLS / DASH** media playlists are captured into a single
+playable file (TS/fMP4, AES-128 decryption included).
 
 ---
 
@@ -16,6 +20,8 @@ or just double-click **`start.bat`**.
 | Feature | downloadX | IDM | Ghost Downloader | Free download managers |
 |---|---|---|---|---|
 | Multi-connection segmented engine | ✅ up to **64** connections, dynamic splitting | ✅ 32 | ✅ | ✅ (usually 8–16) |
+| Protocols | ✅ HTTP/HTTPS + **FTP/FTPS** (multi-connection via REST) | ✅ HTTP/FTP | ✅ HTTP | mixed |
+| **HLS / DASH** media capture | ✅ playlists → one file, AES-128, fMP4, byte ranges | partial | ❌ | rare |
 | **Live per-segment progress** visualization | ✅ every connection shown in real time | ❌ | ❌ | ❌ |
 | Pause / resume across app restarts | ✅ validated with `If-Range` (ETag or Last-Modified) | ✅ | ✅ | mixed |
 | Auto-retry with exponential backoff + `Retry-After` | ✅ | basic | basic | mixed |
@@ -26,24 +32,59 @@ or just double-click **`start.bat`**.
 | Category auto-sort into folders | ✅ | ✅ | ✅ | ✅ |
 | Scheduler window (e.g. only 23:00–07:00) | ✅ | ✅ | ❌ | rare |
 | Shutdown PC when queue empties | ✅ with cancel countdown | ✅ | ❌ | rare |
-| Browser integration | ✅ Chrome/Edge MV3 extension (in `/extension`) | ✅ | ✅ | mixed |
+| Browser integration | ✅ Chrome/Edge/Firefox MV3 extension + installer auto-setup | ✅ | ✅ | mixed |
 | Full **REST API** + SSE live feed | ✅ script anything | ❌ | ❌ | aria2 only |
 | Referer / cookies for picky sites | ✅ | ✅ | ❌ | mixed |
+| Custom headers + **Basic/Digest auth** | ✅ per download | ✅ | ❌ | rare |
+| Proxy support (HTTP/HTTPS/SOCKS5, per download) | ✅ | ✅ | ❌ | rare |
+| Media sniffing + floating page button | ✅ extension | ✅ | ❌ | ❌ |
+| Smart capture rules + site exclusions | ✅ | basic | ❌ | ❌ |
 | Price | **free forever** | $25 + nags | free w/ limits | free w/ ads |
 | Portable | ✅ single folder, zero deps, state in `/data` | ❌ installer | ❌ installer | mixed |
 
 ## Quick start
 
+**Portable** (just the app, keep everything in this folder):
+
 ```bat
-cd downloadX
 start.bat          (or:  node server.js)
 ```
+
+**Windows installer** (per-user, no admin prompt):
+
+```bat
+install.bat
+```
+
+The installer copies the app to `%LOCALAPPDATA%\Programs\downloadX`, adds Start Menu and
+Desktop shortcuts, starts downloadX at login, registers the `downloadx://` protocol,
+installs the native-messaging helper and prepares the browser extension(s). It also picks
+the first free local port in `9765-9775` and pins every shortcut, browser policy and the
+native host to it, so a busy port never breaks updates or browser integration. The protocol
+accepts `downloadx://add?url=https%3A%2F%2Fexample.com%2Ffile.zip` and `downloadx://open`. Use
+`install.bat -AllUsers` from an elevated prompt for a machine-wide install, or
+`install.bat -DryRun` to see exactly what it would do. Uninstall from Apps & features or
+`uninstall.bat`; your download history is kept unless you choose to delete it.
+
+**Standalone EXE** (no Node.js installed at all — single portable file):
+
+```bat
+npm run build:exe      (produces dist\downloadX.exe, ~89 MB)
+```
+
+Copy `downloadX.exe` anywhere and double-click it. The UI opens automatically at
+**http://127.0.0.1:9765**; state lives in a `data\` folder created next to the EXE and the
+browser extension is unpacked to `extension\` beside it, so the whole thing stays portable.
+The same environment variables work (`DLX_PORT`, `DLX_DATA_DIR`, `DLX_EXT_DIR`, `DLX_OPEN=1`
+is implied for the EXE, set `DLX_NO_OPEN=1` to suppress it).
 
 The UI opens at **http://127.0.0.1:9765**. Files land in your `Downloads` folder,
 sorted into `Programs / Compressed / Video / Music / Documents / Images` (configurable).
 
 Paste a URL anywhere on the page (Ctrl+V), or drop a link onto the window, to open the
-Add dialog pre-filled.
+Add dialog pre-filled. The interface ships with a clean light theme by default; the
+moon/sun button in the sidebar footer switches to a dark theme with a Driver Booster-style
+navy-and-blue look, and your choice is remembered.
 
 ### Environment variables
 
@@ -54,19 +95,63 @@ Add dialog pre-filled.
 | `DLX_DATA_DIR` | `./data` | Where `state.json` lives |
 | `DLX_DEBUG` | unset | Log every HTTP range request |
 | `DLX_OPEN` | unset | Set to `1` to open the UI in your browser once the server is listening |
+| `DLX_EXT_DIR` | `./extension` | Folder served at `/ext/updates.xml` and `/ext/downloadx.crx` |
+| `DLX_EXT_CONFIG` | `./installer/config.json` | Extension mode / store IDs for the in-app install button |
+| `DLX_NO_OPEN` | unset | Set to `1` to stop the server from launching Explorer/browsers |
 
-## Browser extension (Chrome / Edge / Brave)
+## Browser extension (Chrome / Edge / Brave / Firefox)
 
-1. Open `chrome://extensions`, enable **Developer mode**.
-2. **Load unpacked** → select the `extension` folder.
-3. Right-click any link / video / image → **Download with downloadX**.
-4. Click the toolbar icon to toggle **full interception** (browser downloads get
-   cancelled and handed to downloadX instead — the classic IDM behavior).
-   The badge shows `ON` while interception is active, `✓` on success and `!` when
-   the local server is unreachable.
+The extension adds the classic download-manager workflow: right-click a link, video,
+audio, image or selected URL → **Download with downloadX**. Just like IDM, **automatic
+interception is on by default**: every download started by the browser is taken over by
+downloadX (browser entry cancelled and cleaned up), including `ftp://` links. Click the
+toolbar icon to toggle interception off/on. The badge shows `ON`, `✓` on success and `!`
+when the local server is unreachable.
 
-If you run downloadX on a non-default port, set `apiBase` in the extension's storage
-(`chrome.storage.local`) to e.g. `http://127.0.0.1:9766`.
+Interception is safe by design: the browser download is only cancelled **after** downloadX
+has accepted it (REST API, or the native host starts the app when it isn't running). Cookies
+for the source site are forwarded, like IDM does for picky sites. If downloadX can't be
+reached the browser download proceeds untouched and the extension backs off for 20 s, so a
+download is never lost.
+
+**Media sniffer** — the extension watches responses for HLS (`m3u8`), DASH (`mpd`) and
+progressive video/audio, and shows a small **downloadX** floating button on pages that have
+captured media. The panel lists each stream with its type and size; one click sends it to
+the app (playlists are handed to the HLS/DASH engine, not downloaded as text). A chip also
+appears when you copy a downloadable link. Both features can be turned off.
+
+**Smart rules** (extension options): minimum media size, excluded sites (`example.com`,
+`*.bank.example`) and file-type exclusions. `interceptMinSize`/site rules apply to automatic
+browser download catching too. Open the options from the extension's Details page or the
+panel's **Settings** button.
+
+The Windows installer builds both variants and registers the native-messaging host
+(`com.downloadx.host`) so the extension can even start downloadX when it is not running.
+There are three modes, chosen automatically by `install.bat`:
+
+- **Store mode** — put your Chrome Web Store / Edge Add-ons IDs in `installer/config.json`
+  (or pass `-ChromeStoreId` / `-EdgeStoreId`). The installer writes the
+  `ExtensionInstallForcelist` policy, so the extension installs silently on the next
+  browser start. This is the same mechanism IDM uses: a store listing plus an enterprise
+  policy. Store mode is the only way to get true silent install on normal PCs.
+- **Self-hosted mode** (`-ExtensionMode selfhosted`) — the installer generates an RSA key,
+  builds a signed CRX3 package, serves it from `/ext/updates.xml` and points the policy at
+  it. Chrome and Edge only honour off-store force-install on **domain-joined** Windows;
+  everywhere else the installer falls back to manual mode.
+- **Manual mode** (the default when no store IDs are configured) — the extension is built
+  into `<install-dir>\extension\chrome`. Load it once via `chrome://extensions` →
+  Developer mode → **Load unpacked** → select `extension\chrome`. The Settings dialog has
+  an **Install browser extension** button that opens the right folder for you.
+
+Firefox: open `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** →
+`extension\firefox\manifest.json`. Automatic install requires an AMO listing — set
+`firefoxInstallUrl` in `installer/config.json` and the installer writes the Firefox
+`ExtensionSettings` policy (release Firefox refuses unsigned local XPIs).
+
+Portable users can load the unpacked `extension` folder without the installer; HTTP
+works on its own. If you run downloadX on a non-default port, the extension learns it
+automatically through the native host when available; otherwise set `apiBase` in the
+extension's storage (`chrome.storage.local`) to e.g. `http://127.0.0.1:9766`.
 
 ## Batch patterns
 
@@ -96,6 +181,16 @@ curl -X POST http://127.0.0.1:9765/api/downloads \
   -H "Content-Type: application/json" \
   -d '{"url":"https://a.example/file.zip","mirrors":["https://b.example/file.zip"],"expectedChecksum":"<sha256>"}'
 
+# auth, custom headers and a per-download proxy
+curl -X POST http://127.0.0.1:9765/api/downloads \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/private.iso","username":"u","password":"p",
+       "headers":{"Accept-Language":"en-US"},"proxy":"socks5://127.0.0.1:1080"}'
+
+# HLS or DASH playlist — downloaded as a single .ts/.mp4 file
+curl -X POST http://127.0.0.1:9765/api/downloads \
+  -H "Content-Type: application/json" -d '{"url":"https://cdn.example/live/master.m3u8"}'
+
 curl http://127.0.0.1:9765/api/health                      # version, pid, uptime
 curl http://127.0.0.1:9765/api/state                       # full snapshot
 curl http://127.0.0.1:9765/api/settings
@@ -121,12 +216,19 @@ curl -X POST http://127.0.0.1:9765/api/cancel-shutdown
 curl -X POST http://127.0.0.1:9765/api/expand \
   -H "Content-Type: application/json" -d '{"text":"https://x/f[01-03].zip"}'
 curl -N http://127.0.0.1:9765/api/events                    # live SSE stream
+curl http://127.0.0.1:9765/api/update-check                 # optional update manifest
 ```
 
 `POST /api/downloads` accepts `url`, `urls`, or `text` (pattern-expanded), plus
 `filename`, `category`, `segments`, `speedLimitKBs`, `mirrors`, `referer`, `cookies`,
-`dir`, `expectedChecksum`, `checksumAlgo`, `priority` and `startedPaused`.
-Multi-URL requests create one download per URL and ignore `filename`.
+`headers` (object), `username`, `password`, `proxy`, `dir`, `expectedChecksum`,
+`checksumAlgo`, `priority` and `startedPaused`. Multi-URL requests create one download
+per URL and ignore `filename`.
+
+`GET /api/update-check` is unconfigured by default. Set `updateUrl` in settings to an
+HTTPS JSON manifest such as `{"version":"1.3.0","url":"https://…/downloadX.exe","notes":"…"}`;
+the UI shows a dismissible banner when the manifest advertises a newer version. Results are
+cached for 6 h and the check honours the global proxy/TLS settings.
 
 ### Security model
 
@@ -158,6 +260,26 @@ The server is local-only and hardened against drive-by attacks from websites:
   detection, unknown-size (chunked) single-stream handling, fatal disk errors
   (`ENOSPC`, `EDQUOT`, …) surfaced immediately, and a fallback to a single streaming
   connection for range-less servers.
+- **FTP / FTPS** — the same engine drives FTP servers: `SIZE`/`MDTM`/`REST` probe the
+  file, each segment resumes with a byte offset, `PASV`/`EPSV` data channels with a
+  private-IP fallback, anonymous or user/password login, and `ftps://` (explicit TLS).
+  Servers without `REST STREAM` gracefully fall back to a single connection. FTP also
+  works with mirrors, schedulers, speed limits and every other feature.
+- **HLS / DASH** — playlists are parsed into a part list and fetched sequentially into a
+  `.dxpart`, then renamed to `.ts` or `.mp4`. HLS supports master variants (highest
+  bandwidth wins), media sequences, `EXT-X-MAP` init sections, `EXT-X-BYTERANGE`, and
+  AES-128 decryption (explicit or sequence-derived IV). DASH supports `SegmentTemplate`
+  (`$Number$`, `$Time$`, `SegmentTimeline`), `SegmentList`, `SegmentBase` and BaseURL
+  chains; video is saved as the main file and audio as `<name>.audio.m4a`. Part progress
+  is persisted, so pausing/restarting a stream resumes at the last completed part.
+- **Network** — HTTP forward proxies, HTTPS `CONNECT` tunnels and SOCKS5 (with auth);
+  Basic and Digest authentication (MD5/SHA-256/SHA-512-256, `qop=auth`); custom headers
+  per download; optional invalid-TLS bypass. Proxy/auth settings are applied to probes,
+  segments, retries, redirects and HLS/DASH part requests.
+- **Categories** — IDM-typical type coverage for `Programs / Compressed / Video / Music /
+  Documents / Images` (installers, APKs, disk images, raw camera files, e-books, subtitle
+  formats, modern archives like `zst`, `7z`, `rar`, …) with a MIME fallback when the
+  filename says nothing.
 - **Integrity** — optional expected checksum (SHA-256/1/512, MD5) is verified
   automatically on completion and can be re-run from the UI or API.
 - **Limits** — a token bucket per download plus a global one smooth bandwidth across
@@ -167,20 +289,35 @@ The server is local-only and hardened against drive-by attacks from websites:
 - **Power** — with *shutdown when done* enabled, the machine is shut down 60 s after the
   last active download completes; a banner with a live countdown and a cancel button
   appears in the UI.
+- **Notifications** — completed/failed downloads raise an in-app toast plus an optional
+  desktop notification and two-tone chime (both toggleable in Settings; browser permission
+  is requested on first enable). The UI is keyboard accessible (skip link, focus rings,
+  Enter/Space row expansion, ARIA labels and live regions) and respects
+  `prefers-reduced-motion`.
 
 ## Project layout
 
 ```
 server.js          HTTP API + SSE + static UI (no dependencies)
 lib/engine.js      segmented download engine, queue, scheduler, checksums
-lib/httpget.js     redirect-following range-aware HTTP client
+lib/httpget.js     redirect-following range-aware HTTP client (proxy, Basic/Digest)
+lib/ftp.js         FTP/FTPS client (REST offsets, PASV/EPSV, TLS) with the same contract
+lib/streams.js     HLS/DASH playlist parsing, AES-128, part fetching helpers
 lib/bucket.js      token-bucket rate limiter
 lib/patterns.js    batch URL pattern expander
 lib/store.js       atomic JSON state persistence
+lib/instance.js    single-instance lock + port-file helpers
+lib/protocol.js    downloadx:// protocol handler
 public/            the web UI (vanilla JS, no build step)
-extension/         Chrome/Edge MV3 connector
+extension/         Chrome/Edge/Firefox MV3 connector (background, content UI, options)
+installer/         Windows installer, CRX3 builder, extension preparation
+installer/build-exe.mjs  standalone EXE builder (pkg + icon/version resources + signing)
+installer/make-packages.mjs  winget + Chocolatey manifests with the real SHA-256
+packaging/         generated winget/choco manifests (npm run package:manifests)
+native/host.cs     native messaging host (compiled by the installer)
 test/              self-contained test suites + benchmark
 data/              runtime state (created on first run)
+dist/              build output: downloadX.exe, downloadX.ico (npm run build:exe)
 ```
 
 ## Tests
@@ -188,11 +325,16 @@ data/              runtime state (created on first run)
 Everything runs locally — no external network required.
 
 ```bash
-npm test                 # engine + API/security suites (default)
+npm test                 # engine + API + network + streams + FTP + extension (default)
 npm run test:engine      # engine, patterns, store, resume, mirrors, checksums…
-npm run test:api         # spawned server: REST, SSE, Host/Origin, traversal, limits
+npm run test:api         # spawned server: REST, SSE, Host/Origin, traversal, update check
+npm run test:net         # HTTP/SOCKS5 proxies, Basic/Digest auth, custom headers
+npm run test:streams     # local HLS/DASH servers: AES-128, fMP4, byte ranges, resume
+npm run test:ftp         # local FTP server: ranged REST transfers, auth, fallbacks
+npm run test:extension   # connector + sniffer + rules + content/options files (mocked)
 npm run test:integration # pause/resume, batch, no-Range fallback, speed limit
 npm run test:local       # pause/resume stress against a controlled range server
+npm run test:installer   # CRX3 signing, ZIP, extension builds, installer dry-run/sandbox
 npm run bench            # 1 vs 16 connections on a throttled local server
 ```
 
@@ -201,6 +343,26 @@ CI runs the full matrix (Windows + Linux, Node 18/20/22/24) on every push and PR
 ## Notes
 
 - The server binds to **127.0.0.1 only** — nothing is exposed to your network.
-- Requires Node.js 18+ (tested on 24). No npm install, ever.
+- Only one server may own a data directory at a time. Launching downloadX again (shortcut,
+  `start.bat`, or the protocol handler) reuses the running instance and just opens the UI,
+  so state and active transfers are never written by two processes.
+- Requires Node.js 18+ (tested on 24). No npm install, ever. The installer checks for
+  Node and can install the LTS release with `install.bat -InstallNode` (winget). The
+  standalone `dist\downloadX.exe` (`npm run build:exe`) needs nothing installed — it
+  bundles its own runtime.
+- True silent extension install on stock (non-domain) Chrome/Edge requires published store
+  IDs; that is a browser platform restriction, not a downloadX limitation. Without them,
+  the installer prepares everything and you load the extension once manually.
+- The extension requests the `cookies` permission only to pass site cookies to the local
+  downloadX server (never anywhere else), matching IDM's behavior on cookie-protected links.
 - State is written atomically (`state.json.tmp` + rename), so a crash won't corrupt
   your download list; active transfers resume on the next launch.
+- Release packaging: `npm run build:exe` then `npm run package:manifests` writes the
+  winget manifest tree (`packaging/winget/manifests/…`) and the Chocolatey package with
+  the built EXE's real SHA-256. Code signing is env-gated in the EXE build —
+  `DLX_SIGN_CERT` + `DLX_SIGN_PASSWORD` (PFX) or `DLX_SIGN_THUMBPRINT` (+ optional
+  `DLX_SIGN_STORE`, `DLX_SIGNTOOL`, `DLX_SIGN_TIMESTAMP`); unsigned builds still succeed.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

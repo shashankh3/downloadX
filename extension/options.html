@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>downloadX Connector — Options</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main>
+    <h1>downloadX Connector</h1>
+    <p class="lead">Send downloads to the downloadX app running on this PC.</p>
+    <form id="opts" novalidate>
+      <section aria-labelledby="conn-h">
+        <h2 id="conn-h">Connection</h2>
+        <label for="apiBase">downloadX address</label>
+        <input id="apiBase" name="apiBase" type="url" inputmode="url" spellcheck="false" placeholder="http://127.0.0.1:9765">
+        <p class="hint">Usually <code>http://127.0.0.1:9765</code>. The native helper discovers the port automatically when the app is running.</p>
+        <div class="row">
+          <button type="button" id="test">Test connection</button>
+          <button type="button" id="openUi" class="secondary">Open downloadX</button>
+        </div>
+      </section>
+
+      <section aria-labelledby="catch-h">
+        <h2 id="catch-h">Download interception</h2>
+        <label class="check">
+          <input type="checkbox" id="intercept" name="intercept">
+          <span>Take over browser downloads</span>
+        </label>
+        <p class="hint">The browser copy is only cancelled after downloadX accepts the job, so nothing is lost when the app is closed.</p>
+
+        <label class="check">
+          <input type="checkbox" id="mediaSniff" name="mediaSniff">
+          <span>Detect HLS, DASH, video and audio on pages</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="floatingButton" name="floatingButton">
+          <span>Show the floating downloadX button</span>
+        </label>
+        <label class="check">
+          <input type="checkbox" id="clipboardWatch" name="clipboardWatch">
+          <span>Offer to download copied links</span>
+        </label>
+
+        <label for="mediaMinSize">Minimum media size (MB)</label>
+        <input id="mediaMinSize" name="mediaMinSize" type="number" min="0" step="0.1" value="1">
+        <p class="hint">Smaller video/audio responses are ignored. Playlists are always detected.</p>
+      </section>
+
+      <section aria-labelledby="rules-h">
+        <h2 id="rules-h">Smart rules</h2>
+        <label for="excludeSites">Never intercept on these sites</label>
+        <textarea id="excludeSites" name="excludeSites" rows="4" spellcheck="false" placeholder="example.com&#10;*.bank.example"></textarea>
+        <p class="hint">One host or wildcard per line. Subdomains match automatically.</p>
+
+        <label for="skipExts">Leave these file types to the browser</label>
+        <input id="skipExts" name="skipExts" type="text" spellcheck="false" placeholder="html, pdf">
+        <p class="hint">Comma-separated extensions, without dots.</p>
+      </section>
+
+      <div class="row actions">
+        <button type="submit" class="primary">Save settings</button>
+        <span id="status" role="status" aria-live="polite"></span>
+      </div>
+    </form>
+    <p class="hint footer">Windows only. English only. All traffic stays on this computer.</p>
+  </main>
+  <script src="options.js"></script>
+</body>
+</html>

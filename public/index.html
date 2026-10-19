@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
+<a class="skip-link" href="#list">Skip to downloads</a>
 <div id="app">
 
   <aside class="sidebar">
@@ -19,8 +20,8 @@
       </div>
     </div>
 
-    <nav id="nav-views">
-      <div class="nav-label">Downloads</div>
+    <nav id="nav-views" aria-label="Download views">
+      <div class="nav-label" aria-hidden="true">Downloads</div>
       <button class="nav-item active" data-view="all"><span class="nav-ico" data-ico="all"></span><span class="nav-text">All</span><span class="nav-count" data-count="view-all">0</span></button>
       <button class="nav-item" data-view="downloading"><span class="nav-ico" data-ico="down"></span><span class="nav-text">Downloading</span><span class="nav-count" data-count="view-downloading">0</span></button>
       <button class="nav-item" data-view="waiting"><span class="nav-ico" data-ico="clock"></span><span class="nav-text">Waiting</span><span class="nav-count" data-count="view-waiting">0</span></button>
@@ -28,8 +29,8 @@
       <button class="nav-item" data-view="failed"><span class="nav-ico" data-ico="xcirc"></span><span class="nav-text">Failed</span><span class="nav-count" data-count="view-failed">0</span></button>
     </nav>
 
-    <nav id="nav-cats">
-      <div class="nav-label">Categories</div>
+    <nav id="nav-cats" aria-label="Categories">
+      <div class="nav-label" aria-hidden="true">Categories</div>
       <button class="nav-item active" data-cat="all"><span class="nav-ico" data-ico="folder"></span><span class="nav-text">All categories</span><span class="nav-count" data-count="cat-all">0</span></button>
       <button class="nav-item" data-cat="Programs"><span class="nav-cat c-program" data-ico="program"></span><span class="nav-text">Programs</span><span class="nav-count" data-count="cat-Programs">0</span></button>
       <button class="nav-item" data-cat="Compressed"><span class="nav-cat c-archive" data-ico="archive"></span><span class="nav-text">Compressed</span><span class="nav-count" data-count="cat-Compressed">0</span></button>
@@ -41,8 +42,11 @@
     </nav>
 
     <div class="side-foot">
-      <button class="side-setting" id="btn-settings"><span class="nav-ico" data-ico="gear"></span><span class="nav-text">Settings</span></button>
-      <div class="side-version" id="side-version">downloadX v1.1</div>
+      <div class="side-button-row">
+        <button class="side-setting" id="btn-settings"><span class="nav-ico" data-ico="gear"></span><span class="nav-text">Settings</span></button>
+        <button class="side-setting" id="btn-theme" title="Switch between light and dark mode"><span class="nav-ico" data-ico="moon"></span><span class="nav-text" id="theme-label">Dark mode</span></button>
+      </div>
+      <div class="side-version" id="side-version">downloadX v1.2</div>
     </div>
   </aside>
 
@@ -52,10 +56,10 @@
         <h1 id="view-title">All downloads</h1>
         <span id="view-sub" class="view-sub">0 items</span>
       </div>
-      <input id="search" class="input search" type="search" placeholder="Search…  (Ctrl+F)">
+      <input id="search" class="input search" type="search" placeholder="Search…  (Ctrl+F)" aria-label="Search downloads">
       <div class="speed-widget" title="Total speed across all transfers">
-        <canvas id="spark" width="150" height="36"></canvas>
-        <div class="speed-num"><b id="global-speed">0 B</b><i>/s</i></div>
+        <canvas id="spark" width="150" height="36" aria-hidden="true"></canvas>
+        <div class="speed-num" aria-label="Total speed"><b id="global-speed">0 B</b><i>/s</i></div>
       </div>
       <div class="top-actions">
         <select id="sort" class="input select sort-select" title="Sort order" aria-label="Sort downloads">
@@ -80,7 +84,14 @@
         <button class="btn danger" id="btn-cancel-shutdown">Cancel shutdown</button>
       </div>
 
-      <section id="list" class="list" aria-live="polite"></section>
+      <div id="update-banner" class="banner hidden">
+        <span class="ic" data-ico="download"></span>
+        <span>downloadX <b id="update-version"></b> is available.</span>
+        <a class="btn primary" id="update-link" href="#" target="_blank" rel="noopener noreferrer">Get update</a>
+        <button class="btn ghost" id="update-dismiss">Dismiss</button>
+      </div>
+
+      <section id="list" class="list" aria-live="polite" tabindex="-1"></section>
 
       <div id="empty" class="empty hidden">
         <div class="big"><span class="ic" data-ico="download"></span></div>
@@ -106,15 +117,15 @@
 </div>
 
 <!-- Add dialog -->
-<dialog id="dlg-add" class="dlg">
+<dialog id="dlg-add" class="dlg" aria-labelledby="add-title">
   <div class="dlg-head">
     <div class="dlg-tile"><span class="ic" data-ico="plus"></span></div>
-    <div><div class="dlg-title">New download</div><div class="dlg-sub">Paste URLs, batch patterns or mirror lists</div></div>
+    <div><div class="dlg-title" id="add-title">New download</div><div class="dlg-sub">Paste URLs, batch patterns or mirror lists</div></div>
   </div>
   <div class="dlg-body">
     <label class="field">
       <span>URL(s) — one per line, patterns supported</span>
-      <textarea id="add-urls" class="input" rows="3" placeholder="https://example.com/file.zip&#10;https://site.com/photos/img[01-20].jpg" autofocus></textarea>
+        <textarea id="add-urls" class="input" rows="3" placeholder="https://example.com/file.zip&#10;ftp://mirror.example.com/big.iso&#10;https://site.com/photos/img[01-20].jpg" autofocus></textarea>
       <div class="hint" id="add-preview"></div>
     </label>
     <div class="grid2">
@@ -139,6 +150,14 @@
         <input id="add-referer" class="input" placeholder="https://example.com/page.html"></label>
       <label class="field"><span>Cookies (e.g. <code>session=abc; theme=dark</code>)</span>
         <input id="add-cookies" class="input" placeholder="name=value; name2=value2"></label>
+      <label class="field"><span>HTTP username (optional)</span>
+        <input id="add-username" class="input" autocomplete="off" placeholder="Basic or Digest auth user"></label>
+      <label class="field"><span>HTTP password (optional)</span>
+        <input id="add-password" class="input" type="password" autocomplete="new-password" placeholder="Password"></label>
+      <label class="field span2"><span>Proxy (optional — <code>http://</code>, <code>https://</code>, <code>socks5://</code>)</span>
+        <input id="add-proxy" class="input" spellcheck="false" placeholder="http://user:pass@127.0.0.1:8080"></label>
+      <label class="field span2"><span>Custom headers (one per line, <code>Name: value</code>)</span>
+        <textarea id="add-headers" class="input" rows="2" spellcheck="false" placeholder="Authorization: Bearer …&#10;Accept-Language: en-US"></textarea></label>
       <label class="field"><span>Expected checksum (optional — verified when the download finishes)</span>
         <input id="add-checksum" class="input" placeholder="SHA-256 / SHA-1 / MD5 / SHA-512 hash"></label>
       <label class="field span2"><span>Save to custom folder (optional)</span>
@@ -153,10 +172,10 @@
 </dialog>
 
 <!-- Settings dialog -->
-<dialog id="dlg-settings" class="dlg">
+<dialog id="dlg-settings" class="dlg" aria-labelledby="settings-title">
   <div class="dlg-head">
     <div class="dlg-tile"><span class="ic" data-ico="gear"></span></div>
-    <div><div class="dlg-title">Settings</div><div class="dlg-sub">Engine, folders, schedule and power</div></div>
+    <div><div class="dlg-title" id="settings-title">Settings</div><div class="dlg-sub">Engine, folders, schedule and power</div></div>
   </div>
   <div class="dlg-body">
     <div class="grid2">
@@ -168,7 +187,12 @@
         <input id="set-segments" class="input" type="number" min="1" max="64" value="16"></label>
       <label class="field"><span>Global speed limit (KB/s, 0 = none)</span>
         <input id="set-globallimit" class="input" type="number" min="0" value="0"></label>
+      <label class="field span2"><span>Global proxy (optional — used when a download has none)</span>
+        <input id="set-proxy" class="input" spellcheck="false" placeholder="http://127.0.0.1:8080, socks5://127.0.0.1:1080"></label>
       <label class="check span2"><input type="checkbox" id="set-organize"> Sort files into category folders</label>
+      <label class="check span2"><input type="checkbox" id="set-invalid-tls"> Allow invalid TLS certificates (not recommended)</label>
+      <label class="field span2"><span>Update manifest URL (optional — HTTPS JSON with <code>version</code> and <code>url</code>)</span>
+        <input id="set-update-url" class="input" spellcheck="false" placeholder="https://example.com/downloadx-update.json"></label>
     </div>
     <fieldset class="fieldset">
       <legend>Schedule — download only inside this window</legend>
@@ -177,6 +201,16 @@
         <label class="field"><span>From (HH:MM)</span><input id="set-sched-from" class="input" type="time" value="23:00"></label>
         <label class="field"><span>To (HH:MM)</span><input id="set-sched-to" class="input" type="time" value="07:00"></label>
       </div>
+    </fieldset>
+    <fieldset class="fieldset">
+      <legend>Notifications</legend>
+      <label class="check"><input type="checkbox" id="set-notify"> Notify when downloads finish</label>
+      <label class="check"><input type="checkbox" id="set-notify-sound"> Play a sound when downloads finish</label>
+    </fieldset>
+    <fieldset class="fieldset">
+      <legend>Browser integration</legend>
+      <p class="hint">Send links and browser downloads straight to downloadX. The Windows installer sets this up automatically.</p>
+      <button class="btn ghost" id="set-extension" type="button"><span class="ic" data-ico="link"></span>Install browser extension</button>
     </fieldset>
     <label class="check danger"><input type="checkbox" id="set-shutdown"> Shut down computer when all downloads finish</label>
   </div>
@@ -187,7 +221,7 @@
 </dialog>
 
 <!-- Confirm dialog -->
-<dialog id="dlg-confirm" class="dlg dlg-sm">
+<dialog id="dlg-confirm" class="dlg dlg-sm" aria-labelledby="confirm-title">
   <div class="dlg-head">
     <div class="dlg-tile danger"><span class="ic" data-ico="alert"></span></div>
     <div><div class="dlg-title" id="confirm-title">Are you sure?</div><div class="dlg-sub confirm-text" id="confirm-text"></div></div>
@@ -198,7 +232,8 @@
   </div>
 </dialog>
 
-<div id="toasts" class="toasts"></div>
+<div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
+<div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
 <script src="/app.js"></script>
 </body>

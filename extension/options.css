@@ -1,0 +1,66 @@
+:root {
+  color-scheme: dark;
+  --bg: #0b1120;
+  --card: #111827;
+  --line: #1f2937;
+  --text: #e5e7eb;
+  --muted: #9ca3af;
+  --accent: #6366f1;
+  --ok: #86efac;
+  --err: #fca5a5;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+main { max-width: 720px; margin: 0 auto; padding: 28px 20px 48px; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+.lead { color: var(--muted); margin: 0 0 24px; }
+section {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 18px 18px 8px;
+  margin-bottom: 16px;
+}
+label { display: block; font-weight: 600; margin: 14px 0 6px; }
+input[type="url"], input[type="text"], input[type="number"], textarea {
+  width: 100%;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 8px;
+  color: var(--text);
+  padding: 9px 11px;
+  font: inherit;
+}
+textarea { resize: vertical; }
+input:focus, textarea:focus, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.check { display: flex; gap: 10px; align-items: flex-start; font-weight: 500; margin: 12px 0; }
+.check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--accent); }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 10px; }
+code { background: #0f172a; border: 1px solid var(--line); border-radius: 4px; padding: 1px 4px; }
+.row { display: flex; align-items: center; gap: 10px; margin: 14px 0 16px; flex-wrap: wrap; }
+button {
+  font: 600 13px/1.2 inherit;
+  border: 1px solid #334155;
+  background: #1f2937;
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 14px;
+  cursor: pointer;
+}
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { background: #4f46e5; }
+button.secondary { background: transparent; }
+.actions { margin-top: 20px; }
+#status { color: var(--ok); min-height: 20px; }
+#status[data-error="1"] { color: var(--err); }
+.footer { margin-top: 20px; text-align: center; }
