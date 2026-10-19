@@ -7,6 +7,7 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-start "" http://127.0.0.1:9765
+set "DLX_OPEN=1"
+echo Starting downloadX - the browser will open when the server is ready...
 node server.js
 pause

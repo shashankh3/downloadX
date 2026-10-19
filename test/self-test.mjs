@@ -1,0 +1,510 @@
+// downloadX self-contained test suite — no external network, no running server.
+// Run: node test/self-test.mjs   (or: npm test)
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { Engine } = require('../lib/engine.js');
+const { expandPattern, expandPatternDetailed } = require('../lib/patterns.js');
+const { TokenBucket } = require('../lib/bucket.js');
+const store = require('../lib/store.js');
+
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-selftest-'));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+const results = [];
+function check(name, ok, extra = '') {
+  results.push({ name, ok });
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? ' — ' + extra : ''}`);
+}
+
+function sha256(buf) {
+  return crypto.createHash('sha256').update(buf).digest('hex');
+}
+
+async function hashFile(p) {
+  return new Promise((resolve, reject) => {
+    const h = crypto.createHash('sha256');
+    fs.createReadStream(p).on('data', (d) => h.update(d)).on('end', () => resolve(h.digest('hex'))).on('error', reject);
+  });
+}
+
+async function waitFor(fn, timeoutMs = 30000, interval = 100) {
+  const t0 = Date.now();
+  for (;;) {
+    const value = await fn();
+    if (value) return value;
+    if (Date.now() - t0 > timeoutMs) throw new Error('waitFor timeout');
+    await sleep(interval);
+  }
+}
+
+function makeServer(handler) {
+  return new Promise((resolve) => {
+    const srv = http.createServer(handler);
+    srv.listen(0, '127.0.0.1', () => resolve(srv));
+  });
+}
+
+/* ---------------- pattern expansion ---------------- */
+{
+  const eq = (input, expected) => {
+    const got = expandPattern(input);
+    return got.length === expected.length && got.every((v, i) => v === expected[i]);
+  };
+  check('pattern: numeric range', eq('http://x/f[1-3].zip', ['http://x/f1.zip', 'http://x/f2.zip', 'http://x/f3.zip']));
+  check('pattern: zero padded', eq('http://x/f[01-03].zip', ['http://x/f01.zip', 'http://x/f02.zip', 'http://x/f03.zip']));
+  check('pattern: letters', eq('http://x/[a-c].txt', ['http://x/a.txt', 'http://x/b.txt', 'http://x/c.txt']));
+  check('pattern: list', eq('http://x/[one,two].txt', ['http://x/one.txt', 'http://x/two.txt']));
+  check('pattern: step', eq('http://x/p[1-9:2].bin', ['http://x/p1.bin', 'http://x/p3.bin', 'http://x/p5.bin', 'http://x/p7.bin', 'http://x/p9.bin']));
+  check('pattern: multi-group cartesian', eq('http://x/[a,b][1-2].txt',
+    ['http://x/a1.txt', 'http://x/a2.txt', 'http://x/b1.txt', 'http://x/b2.txt']));
+  check('pattern: descending', eq('http://x/[3-1].txt', ['http://x/3.txt', 'http://x/2.txt', 'http://x/1.txt']));
+  check('pattern: multiple lines', eq('http://x/a.zip\nhttp://x/b.zip', ['http://x/a.zip', 'http://x/b.zip']));
+  check('pattern: dedupes', eq('http://x/a.zip\nhttp://x/a.zip', ['http://x/a.zip']));
+  check('pattern: IPv6 literal untouched', eq('http://[::1]/f.bin', ['http://[::1]/f.bin']));
+  check('pattern: invalid line reported', (() => {
+    const r = expandPatternDetailed('not a url');
+    return r.urls.length === 0 && r.errors.length === 1;
+  })());
+  check('pattern: cap at 1000', expandPattern('http://x/[1-5000].bin').length === 1000);
+}
+
+/* ---------------- token bucket ---------------- */
+{
+  const b = new TokenBucket(100000);
+  const t0 = Date.now();
+  await b.take(50000);
+  await b.take(50000);
+  check('bucket: starts with a full burst allowance', Date.now() - t0 < 100, `${Date.now() - t0}ms`);
+  const t1 = Date.now();
+  await b.take(150000);
+  const elapsed = Date.now() - t1;
+  check('bucket: throttles after burst is spent', elapsed >= 400 && elapsed < 3000, `${elapsed}ms`);
+  const unlimited = new TokenBucket(0);
+  const t2 = Date.now();
+  await unlimited.take(50 * 1024 * 1024);
+  check('bucket: rate 0 is unlimited', Date.now() - t2 < 50);
+}
+
+/* ---------------- store ---------------- */
+{
+  const file = path.join(TMP, 'store.json');
+  store.save(file, { hello: 'world' });
+  check('store: round-trip', store.load(file, null).hello === 'world');
+  check('store: missing file falls back', store.load(path.join(TMP, 'nope.json'), 'fallback') === 'fallback');
+  fs.writeFileSync(file, '{broken');
+  check('store: corrupt file falls back', store.load(file, null) === null);
+}
+
+/* ---------------- engine helpers ---------------- */
+{
+  const { sanitizeName, categoryFor, normalizeHash, guessAlgo, normalizeSettings } = require('../lib/engine.js');
+  check('sanitize: strips illegal chars', sanitizeName('a<b>c:d"e/f\\g|h?i*j.txt') === 'a_b_c_d_e_f_g_h_i_j.txt');
+  check('sanitize: trims trailing dots/spaces', sanitizeName('name... ') === 'name');
+  check('sanitize: empty -> download', sanitizeName('   ') === 'download');
+  check('sanitize: reserved name prefixed', sanitizeName('CON.txt') === '_CON.txt');
+  check('sanitize: long name keeps extension', (() => {
+    const n = sanitizeName('x'.repeat(300) + '.zip');
+    return n.length <= 180 && n.endsWith('.zip');
+  })());
+  check('category: by extension', categoryFor('', 'movie.mkv') === 'Video');
+  check('category: by mime', categoryFor('audio/mpeg', 'stream.bin') === 'Music');
+  check('category: fallback', categoryFor('application/octet-stream', 'blob.xyz') === 'Others');
+  check('hash: normalization strips prefixes', normalizeHash('sha256: ABCDEF') === 'abcdef');
+  check('hash: guess md5', guessAlgo('d41d8cd98f00b204e9800998ecf8427e') === 'md5');
+  check('hash: guess sha256', guessAlgo('a'.repeat(64)) === 'sha256');
+  check('settings: clamps concurrency', normalizeSettings({ maxConcurrent: 999 }).maxConcurrent === 20);
+  check('settings: invalid schedule falls back', normalizeSettings({ scheduleFrom: '99:99' }).scheduleFrom === '23:00');
+  check('settings: resolves rootDir', path.isAbsolute(normalizeSettings({ rootDir: '.' }).rootDir));
+  const { normalizeCategory } = require('../lib/engine.js');
+  check('category: traversal rejected', normalizeCategory('../../evil') === 'auto');
+  check('category: case-insensitive match', normalizeCategory('video') === 'Video');
+}
+
+/* ---------------- range server fixtures ---------------- */
+const BLOB = crypto.randomBytes(6 * 1024 * 1024 + 137);
+const BLOB_HASH = sha256(BLOB);
+let connCount = 0;
+let maxConns = 0;
+let requestCount = 0;
+
+function rangeHandler(req, res) {
+  requestCount++;
+  connCount++;
+  maxConns = Math.max(maxConns, connCount);
+  req.on('close', () => connCount--);
+  if (req.url.includes('missing')) { res.writeHead(404); return res.end('nope'); }
+  const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
+  let start = 0, end = BLOB.length - 1;
+  if (m) {
+    start = parseInt(m[1], 10);
+    if (m[2]) end = Math.min(parseInt(m[2], 10), BLOB.length - 1);
+    if (start >= BLOB.length) {
+      res.writeHead(416, { 'Content-Range': `bytes */${BLOB.length}` });
+      return res.end();
+    }
+  }
+  res.writeHead(m ? 206 : 200, {
+    'Content-Type': 'application/octet-stream',
+    'Content-Length': String(end - start + 1),
+    'Accept-Ranges': 'bytes',
+    'ETag': '"selftest-v1"',
+    ...(m ? { 'Content-Range': `bytes ${start}-${end}/${BLOB.length}` } : {}),
+  });
+  let pos = start;
+  const iv = setInterval(() => {
+    if (res.destroyed || pos > end) { clearInterval(iv); if (pos > end) res.end(); return; }
+    const n = Math.min(128 * 1024, end - pos + 1);
+    res.write(BLOB.subarray(pos, pos + n));
+    pos += n;
+  }, 100);
+  req.on('close', () => clearInterval(iv));
+}
+
+const srv = await makeServer(rangeHandler);
+const port = srv.address().port;
+const URL_BASE = `http://127.0.0.1:${port}`;
+
+/* ---------------- segmented download + integrity ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine1');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = path.join(TMP, 'files1');
+  engine.settings.maxConcurrent = 4;
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 8 });
+  const done = await waitFor(() => {
+    const it = engine.get(d.id);
+    return ['completed', 'failed'].includes(it.status) ? it : null;
+  }, 60000);
+  check('engine: segmented download completes', done.status === 'completed', done.error);
+  check('engine: exact byte count', done.received === BLOB.length, `${done.received}/${BLOB.length}`);
+  check('engine: content is byte-perfect', (await hashFile(done.finalPath)) === BLOB_HASH);
+  check('engine: used multiple connections', requestCount >= 8, `${requestCount} ranged requests`);
+  check('engine: no leftover part file', !fs.existsSync(done.partPath));
+  engine.close();
+}
+
+/* ---------------- pause / resume ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine2');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = path.join(TMP, 'files2');
+  engine.settings.maxConcurrent = 2;
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 6 });
+  await waitFor(() => d.received > 512 * 1024, 15000);
+  await d.pause('user');
+  check('pause: status paused', d.status === 'paused');
+  const kept = d.received;
+  check('pause: progress retained', kept > 0, `${kept} bytes`);
+  await sleep(300);
+  check('pause: no bytes written while paused', d.received === kept);
+  d.resume();
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 60000);
+  check('resume: completes', done.status === 'completed', done.error);
+  check('resume: content intact', (await hashFile(done.finalPath)) === BLOB_HASH);
+  engine.close();
+}
+
+/* ---------------- persistence across restarts ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine3');
+  const root = path.join(TMP, 'files3');
+  let engine = new Engine(dataDir);
+  engine.settings.rootDir = root;
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 4, startedPaused: true });
+  engine.saveNow();
+  engine.close();
+
+  engine = new Engine(dataDir);
+  const restored = engine.get(d.id);
+  check('persistence: item survives restart', !!restored);
+  check('persistence: settings survive restart', engine.settings.rootDir === root, engine.settings.rootDir);
+  restored.resume();
+  const done = await waitFor(() => ['completed', 'failed'].includes(restored.status) ? restored : null, 60000);
+  check('persistence: resumed download completes', done.status === 'completed', done.error);
+  engine.close();
+}
+
+/* ---------------- no-range server fallback ---------------- */
+{
+  const blob2 = crypto.randomBytes(2 * 1024 * 1024);
+  const srv2 = await makeServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': String(blob2.length) });
+    res.end(blob2);
+  });
+  const dataDir = path.join(TMP, 'engine4');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = path.join(TMP, 'files4');
+  const d = engine.add({ urls: [`http://127.0.0.1:${srv2.address().port}/noranges.bin`] });
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 30000);
+  check('fallback: single-stream completes', done.status === 'completed', done.error);
+  check('fallback: content intact', (await hashFile(done.finalPath)) === sha256(blob2));
+  engine.close();
+  srv2.close();
+}
+
+/* ---------------- mirror failover ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine5');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = path.join(TMP, 'files5');
+  const d = engine.add({
+    urls: [`${URL_BASE}/missing.bin`, `${URL_BASE}/blob.bin`],
+    segments: 4,
+  });
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 60000);
+  check('mirrors: falls back to working mirror', done.status === 'completed', done.error);
+  check('mirrors: content intact', (await hashFile(done.finalPath)) === BLOB_HASH);
+  engine.close();
+}
+
+/* ---------------- checksum auto-verify ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine6');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = path.join(TMP, 'files6');
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 4, expectedChecksum: BLOB_HASH });
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 60000);
+  check('checksum: completes with matching hash', done.status === 'completed', done.error);
+  check('checksum: marked verified', done.checksum && done.checksum.ok === true);
+
+  const d2 = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 2, expectedChecksum: 'f'.repeat(64) });
+  const done2 = await waitFor(() => ['completed', 'failed'].includes(d2.status) ? d2 : null, 60000);
+  check('checksum: mismatch surfaced', done2.status === 'completed' && /mismatch/i.test(done2.error), done2.error);
+  engine.close();
+}
+
+/* ---------------- per-download speed limit ---------------- */
+{
+  const blob3 = crypto.randomBytes(4 * 1024 * 1024);
+  const srv3 = await makeServer((req, res) => {
+    const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
+    let start = 0, end = blob3.length - 1;
+    if (m) { start = parseInt(m[1], 10); if (m[2]) end = Math.min(parseInt(m[2], 10), blob3.length - 1); }
+    res.writeHead(m ? 206 : 200, {
+      'Content-Length': String(end - start + 1),
+      ...(m ? { 'Content-Range': `bytes ${start}-${end}/${blob3.length}` } : {}),
+    });
+    let pos = start;
+    const iv = setInterval(() => {
+      if (res.destroyed || pos > end) { clearInterval(iv); if (pos > end) res.end(); return; }
+      const n = Math.min(128 * 1024, end - pos + 1);
+      res.write(blob3.subarray(pos, pos + n));
+      pos += n;
+    }, 2);
+    req.on('close', () => clearInterval(iv));
+  });
+  const dataDir = path.join(TMP, 'engine7');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = path.join(TMP, 'files7');
+  const d = engine.add({
+    urls: [`http://127.0.0.1:${srv3.address().port}/limited.bin`],
+    segments: 2,
+    speedLimit: 400 * 1024,
+  });
+  await waitFor(() => d.status === 'downloading' && d.received > 100 * 1024, 15000);
+  await sleep(6000);
+  check('speed limit: stays near configured rate', d.speed < 800 * 1024, `${Math.round(d.speed / 1024)} KB/s`);
+  await d.cancel();
+  engine.close();
+  srv3.close();
+}
+
+/* ---------------- queue concurrency ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine8');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = path.join(TMP, 'files8');
+  engine.settings.maxConcurrent = 1;
+  const a = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 2 });
+  const b = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 2, filename: 'second.bin' });
+  await sleep(2500);
+  const active = [a, b].filter((x) => x.status === 'downloading' || x.status === 'probing').length;
+  check('queue: respects maxConcurrent', active <= 1, `${active} active`);
+  await a.cancel();
+  await b.cancel();
+  engine.close();
+}
+
+/* ---------------- scheduling window ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine9');
+  const engine = new Engine(dataDir);
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, '0');
+  engine.settings.scheduleEnabled = true;
+  engine.settings.scheduleFrom = hh + ':00';
+  engine.settings.scheduleTo = hh + ':59';
+  check('schedule: current hour is inside window', engine._inScheduleWindow());
+  engine.settings.scheduleFrom = '00:00';
+  engine.settings.scheduleTo = '00:01';
+  const inside = engine._inScheduleWindow();
+  check('schedule: narrow window evaluated', typeof inside === 'boolean');
+  engine.close();
+}
+
+/* ---------------- failure handling ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine10');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = path.join(TMP, 'files10');
+  const d = engine.add({ urls: [`${URL_BASE}/missing.bin`] });
+  const failed = await waitFor(() => d.status === 'failed' ? d : null, 15000);
+  check('failure: 404 marks download failed', !!failed && /404/.test(failed.error), failed && failed.error);
+  d.retry();
+  check('failure: retry requeues', d.status === 'queued');
+  await d.cancel();
+  engine.close();
+}
+
+/* ---------------- Content-Disposition name refinement ---------------- */
+{
+  const blob4 = crypto.randomBytes(256 * 1024);
+  const srv4 = await makeServer((req, res) => {
+    res.writeHead(200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(blob4.length),
+      'Content-Disposition': 'attachment; filename="server-name.bin"',
+    });
+    res.end(blob4);
+  });
+  const engine = new Engine(path.join(TMP, 'engine12'));
+  engine.settings.rootDir = path.join(TMP, 'files12');
+  const d = engine.add({ urls: [`http://127.0.0.1:${srv4.address().port}/url-name.bin`] });
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 30000);
+  check('probe: Content-Disposition refines auto name', done.status === 'completed' && done.filename === 'server-name.bin', done.filename);
+  engine.close();
+  srv4.close();
+}
+
+/* ---------------- unknown size (chunked) single stream ---------------- */
+{
+  const blob5 = crypto.randomBytes(1024 * 1024);
+  const srv5 = await makeServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
+    res.write(blob5.subarray(0, 512 * 1024));
+    setTimeout(() => res.end(blob5.subarray(512 * 1024)), 50);
+  });
+  const engine = new Engine(path.join(TMP, 'engine13'));
+  engine.settings.rootDir = path.join(TMP, 'files13');
+  const d = engine.add({ urls: [`http://127.0.0.1:${srv5.address().port}/chunked.bin`], segments: 4 });
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 30000);
+  check('chunked: unknown-size download completes', done.status === 'completed', done.error);
+  check('chunked: total inferred from written bytes', done.total === blob5.length, String(done.total));
+  check('chunked: content intact', (await hashFile(done.finalPath)) === sha256(blob5));
+  engine.close();
+  srv5.close();
+}
+
+/* ---------------- restart a completed download ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine14'));
+  engine.settings.rootDir = path.join(TMP, 'files14');
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 4, filename: 'restart-me.bin' });
+  await waitFor(() => d.status === 'completed' ? d : null, 60000);
+  await d.restart();
+  check('restart: completed item requeued', d.status === 'queued');
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 60000);
+  check('restart: downloads again', done.status === 'completed', done.error);
+  check('restart: content intact', (await hashFile(done.finalPath)) === BLOB_HASH);
+  engine.close();
+}
+
+/* ---------------- shutdown only arms for this session's work ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine15');
+  const old = Date.now() - 3600 * 1000;
+  store.save(path.join(dataDir, 'state.json'), {
+    version: 2,
+    settings: { rootDir: path.join(TMP, 'files15'), shutdownWhenDone: true },
+    items: [{
+      id: 'old-done', urls: [`${URL_BASE}/blob.bin`], filename: 'old.bin', category: 'Others',
+      total: 10, status: 'completed', addedAt: old, completedAt: old,
+    }],
+  });
+  const engine = new Engine(dataDir);
+  engine._updateShutdown();
+  check('shutdown: old completed history does not arm', engine.isShutdownArmed() === false);
+  engine.close();
+}
+
+/* ---------------- shutdown cancel does not re-arm ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine16'));
+  engine.settings.rootDir = path.join(TMP, 'files16');
+  engine.settings.shutdownWhenDone = true;
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 2 });
+  await waitFor(() => d.status === 'completed', 60000);
+  engine._updateShutdown();
+  check('shutdown: arms after a real completion', engine.isShutdownArmed() === true);
+  engine.cancelShutdown();
+  engine._updateShutdown();
+  check('shutdown: cancel sticks across ticks', engine.isShutdownArmed() === false);
+  engine.close();
+}
+
+/* ---------------- clear finished ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine11');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = path.join(TMP, 'files11');
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 2 });
+  await waitFor(() => d.status === 'completed', 60000);
+  const removed = await engine.clearFinished(false);
+  check('clear: removes finished item', removed === 1 && engine.items.size === 0);
+  check('clear: keeps downloaded file', fs.existsSync(d.finalPath));
+  engine.close();
+}
+
+/* ---------------- redirect credential handling ---------------- */
+{
+  const { request } = require('../lib/httpget.js');
+  let seen = null;
+  let sameSeen = null;
+  const target = await makeServer((req, res) => {
+    seen = req.headers;
+    res.writeHead(200, { 'content-length': '2' });
+    res.end('ok');
+  });
+  const origin = await makeServer((req, res) => {
+    if (req.url === '/same-final') {
+      sameSeen = req.headers;
+      res.writeHead(200, { 'content-length': '2' });
+      return res.end('ok');
+    }
+    if (req.url === '/same-start') {
+      res.writeHead(302, { location: '/same-final' });
+      return res.end();
+    }
+    res.writeHead(302, { location: `http://127.0.0.1:${target.address().port}/final` });
+    res.end();
+  });
+  const drain = (p) => p.then(({ res }) => new Promise((resolve) => {
+    res.on('end', resolve);
+    res.resume();
+  }));
+  const opts = { headers: { cookie: 'sid=secret', referer: 'http://example.com/page' } };
+  await drain(request(`http://127.0.0.1:${origin.address().port}/same-start`, opts));
+  await drain(request(`http://127.0.0.1:${origin.address().port}/cross-start`, opts));
+  check('redirect: same-origin keeps cookie', sameSeen && sameSeen.cookie === 'sid=secret');
+  check('redirect: cross-origin strips cookie', seen && !seen.cookie, seen && seen.cookie);
+  check('redirect: cross-origin keeps referer', seen && seen.referer === 'http://example.com/page');
+  origin.close(); target.close();
+}
+
+srv.close();
+
+const failed = results.filter((r) => !r.ok);
+console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
+try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* windows lock */ }
+if (failed.length) {
+  console.log('FAILED:', failed.map((f) => f.name).join(' | '));
+  process.exit(1);
+}
+process.exit(0);

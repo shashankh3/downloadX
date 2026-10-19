@@ -1,0 +1,30 @@
+{
+  "name": "downloadx",
+  "version": "1.1.0",
+  "description": "Fast, zero-dependency segmented download manager with a local web UI and REST/SSE API.",
+  "main": "server.js",
+  "type": "commonjs",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test/self-test.mjs && node test/api.test.mjs",
+    "test:engine": "node test/self-test.mjs",
+    "test:api": "node test/api.test.mjs",
+    "test:integration": "node test/run-tests.mjs",
+    "test:local": "node test/local-test.mjs",
+    "test:all": "node test/self-test.mjs && node test/api.test.mjs && node test/run-tests.mjs && node test/local-test.mjs",
+    "bench": "node test/bench.mjs",
+    "debug:resume": "node test/debug-resume.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "download-manager",
+    "segmented-download",
+    "resume",
+    "http",
+    "zero-dependency"
+  ],
+  "license": "MIT"
+}

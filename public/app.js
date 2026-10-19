@@ -4,8 +4,8 @@
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 
-let state = { items: [], settings: {}, globalSpeed: 0, activeCount: 0 };
-const ui = { view: 'all', cat: 'all', search: '', expanded: new Set() };
+let state = { items: [], settings: {}, globalSpeed: 0, activeCount: 0, activeConnections: 0 };
+const ui = { view: 'all', cat: 'all', search: '', sort: 'status', expanded: new Set() };
 const rowMap = new Map();
 const speedHistory = [];
 
@@ -37,6 +37,8 @@ const I = {
   retry:  S('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>'),
   alert:  S('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4M12 17h.01"/>'),
   download:S('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/>'),
+  copy:   S('<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>'),
+  external:S('<path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>'),
 };
 
 const CATS = {
@@ -118,12 +120,20 @@ function confirmDlg(title, text, yesLabel = 'Delete') {
 }
 
 /* ================= SSE ================= */
+let retryDelay = 1000;
 function connect() {
   const es = new EventSource('/api/events');
   es.addEventListener('snapshot', (e) => {
+    retryDelay = 1000;
     try { applySnapshot(JSON.parse(e.data)); } catch { /* partial frame */ }
   });
-  es.onerror = () => { /* EventSource auto-reconnects */ };
+  es.onerror = () => {
+    $('#st-engine').textContent = 'Reconnecting…';
+    $('#st-dot').classList.remove('busy');
+    es.close();
+    setTimeout(connect, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 10000);
+  };
 }
 
 function applySnapshot(snap) {
@@ -131,7 +141,9 @@ function applySnapshot(snap) {
   updateHeader();
   updateCounts();
   renderList();
-  $('#shutdown-banner').classList.toggle('hidden', !state.shutdownArmed);
+  const armed = !!state.shutdownArmed;
+  $('#shutdown-banner').classList.toggle('hidden', !armed);
+  if (armed) $('#shutdown-count').textContent = state.shutdownIn || 60;
 }
 
 /* ================= header / spark / status bar ================= */
@@ -144,8 +156,9 @@ function updateHeader() {
   const busy = (state.activeCount || 0) > 0;
   $('#st-dot').classList.toggle('busy', busy);
   $('#st-engine').textContent = busy
-    ? `Transferring — ${state.activeCount} active connection${state.activeCount > 1 ? 's' : ''}`
+    ? `Transferring — ${state.activeConnections || 0} connection${state.activeConnections === 1 ? '' : 's'}`
     : 'Engine ready';
+  $('#st-conn').textContent = `${state.activeConnections || 0} connection${state.activeConnections === 1 ? '' : 's'}`;
 }
 
 function drawSpark() {
@@ -196,23 +209,31 @@ function updateCounts() {
   const waiting = vc.waiting;
   $('#st-act').textContent = `${state.activeCount || 0} active · ${waiting} waiting`;
   $('#st-total').textContent = `${vc.completed} completed`;
+  $('#btn-retry-failed').hidden = vc.failed === 0;
+  $('#btn-clear').hidden = (vc.completed + vc.failed) === 0;
 }
 
 /* ================= list rendering ================= */
 function filteredItems() {
   const q = ui.search.toLowerCase();
-  const order = { downloading: 0, probing: 0, queued: 1, paused: 2, completed: 3, failed: 4, canceled: 5 };
-  return state.items
-    .filter((it) => {
-      if (ui.view === 'downloading' && !(it.status === 'downloading' || it.status === 'probing')) return false;
-      if (ui.view === 'waiting' && !(it.status === 'queued' || it.status === 'paused')) return false;
-      if (ui.view === 'completed' && it.status !== 'completed') return false;
-      if (ui.view === 'failed' && !(it.status === 'failed' || it.status === 'canceled')) return false;
-      if (ui.cat !== 'all' && it.category !== ui.cat) return false;
-      if (q && !(it.filename.toLowerCase().includes(q) || it.url.toLowerCase().includes(q))) return false;
-      return true;
-    })
-    .sort((a, b) => (order[a.status] - order[b.status]) || (b.addedAt - a.addedAt));
+  const statusOrder = { downloading: 0, probing: 0, queued: 1, paused: 2, completed: 3, failed: 4, canceled: 5 };
+  const items = state.items.filter((it) => {
+    if (ui.view === 'downloading' && !(it.status === 'downloading' || it.status === 'probing')) return false;
+    if (ui.view === 'waiting' && !(it.status === 'queued' || it.status === 'paused')) return false;
+    if (ui.view === 'completed' && it.status !== 'completed') return false;
+    if (ui.view === 'failed' && !(it.status === 'failed' || it.status === 'canceled')) return false;
+    if (ui.cat !== 'all' && it.category !== ui.cat) return false;
+    if (q && !(it.filename.toLowerCase().includes(q) || it.url.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const cmp = {
+    status: (a, b) => (statusOrder[a.status] - statusOrder[b.status]) || (b.addedAt - a.addedAt),
+    date: (a, b) => b.addedAt - a.addedAt,
+    name: (a, b) => a.filename.localeCompare(b.filename, undefined, { sensitivity: 'base' }),
+    size: (a, b) => (b.total || 0) - (a.total || 0),
+    speed: (a, b) => (b.speed || 0) - (a.speed || 0),
+  };
+  return items.sort(cmp[ui.sort] || cmp.status);
 }
 
 function renderList() {
@@ -251,8 +272,7 @@ function buildRow() {
     <div class="rdetails" style="display:none"></div>`;
   const q = (s) => el_.querySelector(s);
   const row = {
-    el: el_,
-    tilebox: q('.tilebox'), rname: q('.rname'), mstat: q('.mstat'), msize: q('.msize'),
+    el: el_, tilebox: q('.tilebox'), rname: q('.rname'), mstat: q('.mstat'), msize: q('.msize'),
     mspeed: q('.mspeed'), meta: q('.meta'), merr: q('.merr'),
     barWrap: q('.bar-wrap'), segbar: q('.segbar'), pct: q('.pct'),
     actions: q('.raction'), details: q('.rdetails'), actionsFor: '', detailsBuilt: false,
@@ -276,6 +296,7 @@ function updateRow(row, it) {
   row.el.className = 'row ' + it.status;
   row.tilebox.innerHTML = catTile(it.category);
   row.rname.textContent = it.filename;
+  row.rname.title = it.filename;
   const pctVal = it.total > 0 ? Math.min(100, (it.received / it.total) * 100) : 0;
   row.pct.textContent = it.status === 'completed' ? '✓'
     : it.status === 'failed' ? '!' : (pctVal > 0 ? pctVal.toFixed(pctVal >= 10 ? 0 : 1) + '%' : '');
@@ -284,7 +305,8 @@ function updateRow(row, it) {
   row.msize.textContent = it.total > 0 ? `${fmtBytes(it.received)} / ${fmtBytes(it.total)}` : fmtBytes(it.received);
   row.mspeed.textContent = it.status === 'downloading' ? fmtSpeed(it.speed) : '';
   row.meta.textContent = it.status === 'downloading' && it.eta >= 0 ? 'ETA ' + fmtEta(it.eta) : '';
-  row.merr.textContent = it.error && it.status === 'failed' ? it.error : '';
+  row.merr.textContent = it.error || '';
+  row.merr.title = it.error || '';
 
   renderSegbar(row, it);
 
@@ -295,6 +317,7 @@ function updateRow(row, it) {
       const b = el('button', 'rbtn' + (danger ? ' danger' : ''));
       b.innerHTML = I[icon];
       b.title = title;
+      b.setAttribute('aria-label', title);
       b.onclick = (e) => { e.stopPropagation(); fn(); };
       row.actions.appendChild(b);
     };
@@ -320,6 +343,11 @@ function updateRow(row, it) {
     } else if (it.status === 'completed') {
       add('folder', 'Open folder', () => act('open-folder'));
       add('doc', 'Open file', () => act('open-file'));
+      add('retry', 'Download again', async () => {
+        if (await confirmDlg('Download again?', `"${it.filename}" will be downloaded from scratch and the existing file kept if the name is taken.`, 'Download')) {
+          api(`/api/downloads/${it.id}/restart`, { method: 'POST', body: {} }).catch((e) => toast(e.message, 'err'));
+        }
+      });
       add('trash', 'Delete file', async () => {
         if (await confirmDlg('Delete file?', `"${it.filename}" will be permanently deleted from disk.`)) {
           api(`/api/downloads/${it.id}?file=1`, { method: 'DELETE' }).then(() => toast('Deleted', 'ok'), (e) => toast(e.message, 'err'));
@@ -332,6 +360,7 @@ function updateRow(row, it) {
   const expanded = ui.expanded.has(it.id);
   row.details.style.display = expanded ? 'grid' : 'none';
   if (expanded) renderDetails(row, it);
+  else row.detailsBuilt = false;
 }
 
 function renderSegbar(row, it) {
@@ -356,9 +385,13 @@ function renderSegbar(row, it) {
 
 function renderDetails(row, it) {
   const d = row.details;
-  // don't rebuild while the user is typing into the panel
+  const sig = [it.id, it.status, it.error, it.expectedChecksum, it.checksumAlgo, it.speedLimit,
+    it.checksum && it.checksum.at, it.segments.length, it.segmentsWanted, it.completedAt,
+    it.activeConnections].join('|');
+  if (row.detailsSig === sig && d.childElementCount) return;
   if (row.detailsBuilt && d.contains(document.activeElement)) return;
   row.detailsBuilt = true;
+  row.detailsSig = sig;
   const dl = (label, valueNode) => {
     const dt = el('dt', null, label);
     const dd = el('dd');
@@ -367,10 +400,13 @@ function renderDetails(row, it) {
     d.append(dt, dd);
   };
   d.innerHTML = '';
-  dl('URL', it.url);
+  dl('URL', el('span', 'mono', it.url));
   if (it.urls && it.urls.length > 1) dl('Mirrors', it.urls.slice(1).join(', '));
   dl('Saved to', el('span', 'mono', it.path));
-  dl('Connections', `${it.segments.filter((s) => s.active).length} active / ${it.segments.length} segments (max ${it.segmentsWanted})`);
+  const segCount = it.segments.length;
+  dl('Connections', `${it.activeConnections || 0} active / ${segCount} segment${segCount === 1 ? '' : 's'} (max ${it.segmentsWanted})`);
+  dl('Resumable', it.canResume ? 'Yes — validated with If-Range' : 'No — single stream');
+  if (it.expectedChecksum) dl('Expected hash', el('span', 'mono', it.expectedChecksum));
   if (it.error) dl('Error', el('span', 'mono', it.error));
 
   const limitBox = el('div', 'checksum-form');
@@ -388,8 +424,10 @@ function renderDetails(row, it) {
   for (const a of ['sha256', 'sha1', 'md5', 'sha512']) {
     const o = el('option', null, a); o.value = a; algo.appendChild(o);
   }
+  if (it.checksumAlgo) algo.value = it.checksumAlgo;
   const hashInput = el('input', 'input');
   hashInput.placeholder = 'Expected checksum (verify integrity)';
+  hashInput.value = it.expectedChecksum || '';
   const btn = el('button', 'btn ghost', 'Verify');
   btn.onclick = () => {
     if (!hashInput.value.trim()) return toast('Paste the expected checksum first', 'err');
@@ -410,6 +448,7 @@ function renderDetails(row, it) {
     dl('Result', [b, note]);
   }
   dl('Added', new Date(it.addedAt).toLocaleString());
+  if (it.completedAt) dl('Completed', new Date(it.completedAt).toLocaleString());
 }
 
 /* ================= add dialog ================= */
@@ -418,6 +457,19 @@ function openAdd(prefill) {
   $('#add-urls').value = prefill || '';
   $('#add-filename').value = '';
   $('#add-preview').textContent = '';
+  $('#add-category').value = 'auto';
+  const segs = (state && state.settings && state.settings.defaultSegments) || 16;
+  $('#add-segments').value = segs;
+  $('#add-segv').textContent = segs;
+  $('#add-limit').value = '0';
+  $('#add-mirrors').value = '';
+  $('#add-referer').value = '';
+  $('#add-cookies').value = '';
+  $('#add-checksum').value = '';
+  $('#add-dir').value = '';
+  $('#add-paused').checked = false;
+  const adv = dlg.querySelector('details.advanced');
+  if (adv) adv.open = false;
   dlg.showModal();
   $('#add-urls').focus();
 }
@@ -430,6 +482,10 @@ $('#add-urls').addEventListener('input', () => {
     if (!text) { $('#add-preview').textContent = ''; return; }
     try {
       const r = await api('/api/expand', { method: 'POST', body: { text } });
+      if (r.errors && r.errors.length && !r.urls.length) {
+        $('#add-preview').textContent = r.errors[0].error;
+        return;
+      }
       $('#add-preview').textContent = r.urls.length > 1 ? `Will add ${r.urls.length} downloads` : '';
     } catch { /* ignore */ }
   }, 350);
@@ -447,13 +503,19 @@ $('#add-ok').addEventListener('click', async () => {
     speedLimitKBs: parseInt($('#add-limit').value, 10) || 0,
     mirrors: $('#add-mirrors').value.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean),
     referer: $('#add-referer').value.trim() || undefined,
+    cookies: $('#add-cookies').value.trim() || undefined,
+    expectedChecksum: $('#add-checksum').value.trim() || undefined,
+    dir: $('#add-dir').value.trim() || undefined,
     startedPaused: $('#add-paused').checked,
   };
+  const btn = $('#add-ok');
+  btn.disabled = true;
   try {
     const r = await api('/api/downloads', { method: 'POST', body });
     $('#dlg-add').close();
     toast(r.batch ? `Added ${r.batch.length} downloads` : `Added: ${r.filename || 'download started'}`, 'ok');
   } catch (e) { toast(e.message, 'err'); }
+  finally { btn.disabled = false; }
 });
 $('#add-cancel').addEventListener('click', () => $('#dlg-add').close());
 $('#btn-add').addEventListener('click', () => openAdd());
@@ -520,14 +582,54 @@ function refreshViewTitle() {
   updateCounts();
 }
 $('#search').addEventListener('input', (e) => { ui.search = e.target.value; renderList(); });
+$('#sort').addEventListener('change', (e) => { ui.sort = e.target.value; renderList(); });
 
-$('#btn-pause-all').addEventListener('click', () => api('/api/pause-all', { method: 'POST' }).then(() => toast('Paused all'), (e) => toast(e.message, 'err')));
-$('#btn-resume-all').addEventListener('click', () => api('/api/resume-all', { method: 'POST' }).then(() => toast('Resumed all'), (e) => toast(e.message, 'err')));
-$('#btn-cancel-shutdown').addEventListener('click', () => api('/api/cancel-shutdown', { method: 'POST' }).then(() => toast('Shutdown cancelled', 'ok'), (e) => toast(e.message, 'err')));
+$('#btn-pause-all').addEventListener('click', () => api('/api/pause-all', { method: 'POST', body: {} }).then(() => toast('Paused all'), (e) => toast(e.message, 'err')));
+$('#btn-resume-all').addEventListener('click', () => api('/api/resume-all', { method: 'POST', body: {} }).then(() => toast('Resumed all'), (e) => toast(e.message, 'err')));
+$('#btn-cancel-shutdown').addEventListener('click', () => api('/api/cancel-shutdown', { method: 'POST', body: {} }).then(() => toast('Shutdown cancelled', 'ok'), (e) => toast(e.message, 'err')));
+$('#btn-retry-failed').addEventListener('click', () => api('/api/retry-failed', { method: 'POST', body: {} }).then((r) => toast(`Retrying ${r.retried} download${r.retried === 1 ? '' : 's'}`, 'ok'), (e) => toast(e.message, 'err')));
+$('#btn-clear').addEventListener('click', async () => {
+  const deleteFiles = await confirmDlg('Clear finished?', 'Completed, failed and canceled items will be removed from the list. Files already downloaded are kept.', 'Clear');
+  if (!deleteFiles) return;
+  api('/api/clear-finished', { method: 'POST', body: { deleteFiles: false } })
+    .then((r) => toast(`Removed ${r.removed} item${r.removed === 1 ? '' : 's'}`, 'ok'), (e) => toast(e.message, 'err'));
+});
+
+/* ================= drag & drop links ================= */
+let dragDepth = 0;
+const hasLinks = (e) => {
+  const types = e.dataTransfer ? [...e.dataTransfer.types] : [];
+  return types.includes('text/uri-list') || types.includes('text/plain');
+};
+window.addEventListener('dragenter', (e) => {
+  if (!hasLinks(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  $('#dropzone').classList.remove('hidden');
+});
+window.addEventListener('dragleave', () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) $('#dropzone').classList.add('hidden');
+});
+window.addEventListener('dragover', (e) => { if (hasLinks(e)) e.preventDefault(); });
+window.addEventListener('drop', (e) => {
+  if (!hasLinks(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  $('#dropzone').classList.add('hidden');
+  const text = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain') || '';
+  const urls = text.split(/[\r\n]+/).map((s) => s.trim()).filter((s) => /^https?:\/\//i.test(s));
+  if (urls.length) openAdd(urls.join('\n'));
+});
 
 /* ================= keyboard / paste ================= */
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') { e.preventDefault(); $('#search').focus(); }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); if (!$('#dlg-add').open) openAdd(); }
+  if (e.key === 'Escape') {
+    const dlg = $('dialog[open]');
+    if (dlg) dlg.close();
+  }
 });
 document.addEventListener('paste', (e) => {
   const tag = (document.activeElement && document.activeElement.tagName) || '';
@@ -541,3 +643,6 @@ document.addEventListener('paste', (e) => {
 /* ================= boot ================= */
 refreshViewTitle();
 connect();
+fetch('/api/health').then((r) => r.json()).then((h) => {
+  if (h && h.version && $('#side-version')) $('#side-version').textContent = 'downloadX v' + h.version;
+}).catch(() => {});

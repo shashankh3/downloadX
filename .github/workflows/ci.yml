@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [18, 20, 22, 24]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Syntax check
+        run: node --check server.js && node --check lib/engine.js && node --check lib/httpget.js && node --check lib/patterns.js && node --check lib/store.js && node --check lib/bucket.js
+      - name: Engine self-tests
+        run: node test/self-test.mjs
+      - name: API + security tests
+        run: node test/api.test.mjs
+      - name: Integration tests
+        run: node test/run-tests.mjs
+      - name: Local pause/resume tests
+        run: node test/local-test.mjs

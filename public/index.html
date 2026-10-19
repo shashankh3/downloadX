@@ -42,7 +42,7 @@
 
     <div class="side-foot">
       <button class="side-setting" id="btn-settings"><span class="nav-ico" data-ico="gear"></span><span class="nav-text">Settings</span></button>
-      <div class="side-version">downloadX v1.0</div>
+      <div class="side-version" id="side-version">downloadX v1.1</div>
     </div>
   </aside>
 
@@ -58,34 +58,46 @@
         <div class="speed-num"><b id="global-speed">0 B</b><i>/s</i></div>
       </div>
       <div class="top-actions">
-        <button class="btn ghost" id="btn-pause-all" title="Pause everything"><span class="ic" data-ico="pause"></span>Pause all</button>
-        <button class="btn ghost" id="btn-resume-all" title="Resume everything"><span class="ic" data-ico="play"></span>Resume all</button>
-        <button class="btn primary" id="btn-add"><span class="ic" data-ico="plus"></span>New download</button>
+        <select id="sort" class="input select sort-select" title="Sort order" aria-label="Sort downloads">
+          <option value="status">Status</option>
+          <option value="date">Date added</option>
+          <option value="name">Name</option>
+          <option value="size">Size</option>
+          <option value="speed">Speed</option>
+        </select>
+        <button class="btn ghost" id="btn-pause-all" title="Pause everything"><span class="ic" data-ico="pause"></span><span class="btn-label">Pause all</span></button>
+        <button class="btn ghost" id="btn-resume-all" title="Resume everything"><span class="ic" data-ico="play"></span><span class="btn-label">Resume all</span></button>
+        <button class="btn ghost" id="btn-retry-failed" title="Retry every failed download" hidden><span class="ic" data-ico="retry"></span><span class="btn-label">Retry failed</span></button>
+        <button class="btn ghost" id="btn-clear" title="Remove completed and failed items from the list"><span class="ic" data-ico="trash"></span><span class="btn-label">Clear</span></button>
+        <button class="btn primary" id="btn-add"><span class="ic" data-ico="plus"></span><span class="btn-label">New download</span></button>
       </div>
     </header>
 
     <div class="content">
       <div id="shutdown-banner" class="banner hidden">
         <span class="ic" data-ico="alert"></span>
-        <span>All downloads finished — <b>system shutdown in 60&nbsp;s</b></span>
+        <span>All downloads finished — <b>system shutdown in <span id="shutdown-count">60</span>&nbsp;s</b></span>
         <button class="btn danger" id="btn-cancel-shutdown">Cancel shutdown</button>
       </div>
 
-      <section id="list" class="list"></section>
+      <section id="list" class="list" aria-live="polite"></section>
 
       <div id="empty" class="empty hidden">
         <div class="big"><span class="ic" data-ico="download"></span></div>
         <h2>Nothing here yet</h2>
-        <p>Add a URL, paste a link anywhere (Ctrl+V), or install the browser extension.<br>
+        <p>Add a URL, paste a link anywhere (Ctrl+V), or drop a link onto this window.<br>
            Sequential patterns work too: <code>https://site/file[01-12].zip</code></p>
         <button class="btn primary" id="btn-add-empty"><span class="ic" data-ico="plus"></span>New download</button>
       </div>
+      <div id="dropzone" class="dropzone hidden"><div><span class="ic" data-ico="download"></span><b>Drop links to download</b></div></div>
     </div>
 
     <footer class="statusbar">
       <div class="st-left"><span class="st-dot" id="st-dot"></span><span id="st-engine">Engine ready</span></div>
       <div class="st-right">
         <span id="st-act">0 active · 0 waiting</span>
+        <span class="st-sep">|</span>
+        <span id="st-conn">0 connections</span>
         <span class="st-sep">|</span>
         <span id="st-total">0 completed</span>
       </div>
@@ -125,6 +137,12 @@
         <textarea id="add-mirrors" class="input" rows="2" placeholder="https://mirror.example.com/file.zip"></textarea></label>
       <label class="field"><span>Referer (some sites require it)</span>
         <input id="add-referer" class="input" placeholder="https://example.com/page.html"></label>
+      <label class="field"><span>Cookies (e.g. <code>session=abc; theme=dark</code>)</span>
+        <input id="add-cookies" class="input" placeholder="name=value; name2=value2"></label>
+      <label class="field"><span>Expected checksum (optional — verified when the download finishes)</span>
+        <input id="add-checksum" class="input" placeholder="SHA-256 / SHA-1 / MD5 / SHA-512 hash"></label>
+      <label class="field span2"><span>Save to custom folder (optional)</span>
+        <input id="add-dir" class="input" placeholder="Defaults to the category folder"></label>
       <label class="check"><input type="checkbox" id="add-paused"> Add paused (download later)</label>
     </details>
   </div>

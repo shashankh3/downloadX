@@ -1,10 +1,18 @@
-// In-process engine debug: local range server, pause at ~8MB, resume, watch every request.
+// In-process engine debug: local range server, pause at ~4MB, resume, watch every request.
+// Run: node test/debug-resume.mjs
 process.env.DLX_DEBUG = '1';
-const { Engine } = await import('../lib/engine.js');
-const http = await import('node:http');
-const crypto = await import('node:crypto');
+import http from 'node:http';
+import os from 'node:os';
+import path from 'node:path';
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
 
-const BLOB = crypto.randomBytes(25 * 1024 * 1024);
+const require = createRequire(import.meta.url);
+const { Engine } = require('../lib/engine.js');
+
+const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-dbg-'));
+const BLOB = crypto.randomBytes(12 * 1024 * 1024);
 const srv = http.createServer((req, res) => {
   const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
   let start = 0, end = BLOB.length - 1;
@@ -24,20 +32,21 @@ const srv = http.createServer((req, res) => {
   }, 25);
   req.on('close', () => clearInterval(iv));
 });
-await new Promise((r) => srv.listen(9114, '127.0.0.1', r));
+await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+const base = `http://127.0.0.1:${srv.address().port}`;
 console.log('== range server up, engine starting ==');
 
-const engine = new Engine('C:\\Users\\sonali\\AppData\\Local\\Temp\\dlx-dbg-' + Date.now());
-engine.settings.rootDir = 'C:\\Users\\sonali\\AppData\\Local\\Temp\\dlx-dbg-files';
+const engine = new Engine(path.join(TMP, 'data'));
+engine.settings.rootDir = path.join(TMP, 'files');
 engine.settings.maxConcurrent = 1;
 
-const d = engine.add({ urls: ['http://127.0.0.1:9114/blob.bin'], segments: 6 });
+const d = engine.add({ urls: [`${base}/blob.bin`], segments: 6 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let it;
 for (let i = 0; i < 100; i++) {
   await sleep(400);
   it = engine.get(d.id);
-  if (it.received > 8 * 1048576) break;
+  if (it.received > 4 * 1048576) break;
 }
 console.log(`\n== PAUSE at ${(it.received / 1048576).toFixed(1)}MB ==`);
 await d.pause('user');
@@ -54,5 +63,7 @@ for (let i = 0; i < 40; i++) {
 }
 const fin = engine.get(d.id);
 console.log('FINAL:', fin.status, fin.error || '');
+engine.close();
 srv.close();
+try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* windows lock */ }
 process.exit(fin.status === 'completed' ? 0 : 1);
