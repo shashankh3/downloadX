@@ -61,6 +61,31 @@ function cleanReg(key) {
   powershell(`Remove-Item -LiteralPath '${safe}' -Recurse -Force -ErrorAction SilentlyContinue`);
 }
 
+/**
+ * Compare two Windows paths the way the installer sees them.
+ *
+ * The installer stores canonical absolute paths ([IO.Path]::GetFullPath), which
+ * expands 8.3 short names — GitHub's runners report the temp folder as
+ * "C:\Users\RUNNER~1\..." while the installer writes
+ * "C:\Users\runneradmin\...". Comparing the raw strings therefore fails on CI
+ * even though both paths point at the same folder.
+ */
+function samePath(a, b) {
+  if (!a || !b) return false;
+  const norm = (p) => {
+    let out = String(p).trim().replace(/[\\/]+$/, '');
+    try { out = fs.realpathSync.native(out); } catch { /* not created (yet) */ }
+    return out.toLowerCase();
+  };
+  return norm(a) === norm(b);
+}
+
+/** Read a "set NAME=value" style entry out of a generated launcher. */
+function launcherValue(text, name) {
+  const m = new RegExp(name + '=([^\\r\\n"]+)', 'i').exec(String(text || ''));
+  return m ? m[1].trim() : '';
+}
+
 function readZip(buf) {
   const eocdSig = Buffer.from([0x50, 0x4b, 0x05, 0x06]);
   let eocd = -1;
@@ -354,10 +379,12 @@ if (WINDOWS) {
     check('install: writes launchers', fs.existsSync(path.join(appDir, 'downloadX.cmd')) && fs.existsSync(path.join(appDir, 'downloadX-silent.vbs')) && fs.existsSync(path.join(appDir, 'downloadX-start.vbs')) && fs.existsSync(path.join(appDir, 'downloadx-protocol.vbs')));
     let json = null;
     try { json = JSON.parse(fs.readFileSync(path.join(appDir, 'install.json'), 'utf8')); } catch { /* missing */ }
-    check('install: install.json', json && json.dataDir === dataDir && json.node);
+    check('install: install.json', json && samePath(json.dataDir, dataDir) && !!json.node,
+      'dataDir=' + (json && json.dataDir) + ' expected=' + dataDir + ' node=' + (json && json.node));
     check('install: chooses a local port', !!json && json.port >= 9765 && json.port <= 9775, json && json.port);
     const cmdText = fs.readFileSync(path.join(appDir, 'downloadX.cmd'), 'utf8');
-    check('install: launcher data dir', cmdText.includes('DLX_DATA_DIR=' + dataDir));
+    check('install: launcher data dir', samePath(launcherValue(cmdText, 'DLX_DATA_DIR'), dataDir),
+      'launcher=' + launcherValue(cmdText, 'DLX_DATA_DIR') + ' expected=' + dataDir);
     check('install: launcher pins the chosen port', !!json && cmdText.includes('DLX_PORT=' + json.port));
     const vbsRaw = fs.readFileSync(path.join(appDir, 'downloadx-protocol.vbs'));
     const protoText = vbsRaw.toString('utf16le');
@@ -407,7 +434,8 @@ if (WINDOWS) {
     const hostFile = path.join(appDir, 'native', 'com.downloadx.host.json');
     check('extension install: writes native host manifest', fs.existsSync(hostFile));
     const registered = powershell(`(Get-Item -LiteralPath '${(reg + '\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.downloadx.host').replace(/'/g, "''")}' -ErrorAction SilentlyContinue).GetValue('')`).stdout.trim();
-    check('extension install: registers native host', registered.toLowerCase() === hostFile.toLowerCase(), registered);
+    check('extension install: registers native host', samePath(registered, hostFile),
+      'registered=' + registered + ' expected=' + hostFile);
 
     const portMock = http.createServer((req, res) => {
       if (req.url === '/api/health') {
