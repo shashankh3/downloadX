@@ -97,6 +97,10 @@ const dashV = ['DASHV1', 'DASHV2', 'DASHV3', 'DASHV4', 'DASHV5'].map((s) => Buff
 const dashInitA = Buffer.from('DASH-AUDIO-INIT');
 const dashA = [Buffer.from('DASHA1'), Buffer.from('DASHA2')];
 
+/* A playlist that switches its initialisation section halfway through. */
+const mapChangeInit = Buffer.from('FMP4-INIT-2');
+const mapChangeSegs = [Buffer.from('MAPSEG0'), Buffer.from('MAPSEG1')];
+
 const slowDelayMs = 150;
 
 function buildRoutes() {
@@ -165,6 +169,32 @@ function buildRoutes() {
   ].join('\n')), 'application/vnd.apple.mpegurl');
   add('/fmp4/init.mp4', fmp4Init);
   fmp4Segs.forEach((b, i) => add(`/fmp4/seg${i}.m4s`, b));
+
+  add('/mapchange/index.m3u8', Buffer.from([
+    '#EXTM3U',
+    '#EXT-X-TARGETDURATION:4',
+    '#EXTINF:4.0,',
+    'm0.m4s',
+    '#EXT-X-MAP:URI="/mapchange/init.mp4"',
+    '#EXTINF:4.0,',
+    'm1.m4s',
+    '#EXT-X-ENDLIST',
+  ].join('\n')), 'application/vnd.apple.mpegurl');
+  add('/mapchange/init.mp4', mapChangeInit);
+  mapChangeSegs.forEach((b, i) => add(`/mapchange/m${i}.m4s`, b));
+
+  add('/mapchange/index.m3u8', Buffer.from([
+    '#EXTM3U',
+    '#EXT-X-TARGETDURATION:4',
+    '#EXTINF:4.0,',
+    'm0.m4s',
+    '#EXT-X-MAP:URI="/mapchange/init.mp4"',
+    '#EXTINF:4.0,',
+    'm1.m4s',
+    '#EXT-X-ENDLIST',
+  ].join('\n')), 'application/vnd.apple.mpegurl');
+  add('/mapchange/init.mp4', mapChangeInit);
+  mapChangeSegs.forEach((b, i) => add(`/mapchange/m${i}.m4s`, b));
 
   add('/range/index.m3u8', Buffer.from([
     '#EXTM3U',
@@ -292,6 +322,20 @@ function startServer(routes) {
   const d = await runDownload(engine, `http://127.0.0.1:${srv.port}/pad/index.m3u8`);
   check('aes: plaintext ending in a padding-like byte is not truncated',
     d.status === 'completed' && fs.readFileSync(d.finalPath).equals(padPlain), d.error || `${fs.readFileSync(d.finalPath).length} bytes`);
+  engine.close();
+  srv.server.close();
+}
+
+/* ---------------- HLS with a mid-playlist init change ---------------- */
+{
+  const srv = await startServer(buildRoutes());
+  const engine = makeEngine();
+  const d = await runDownload(engine, `http://127.0.0.1:${srv.port}/mapchange/index.m3u8`);
+  check('map change: download completes', d.status === 'completed', d.error);
+  // The init section belongs to the second part, not in front of the first.
+  check('map change: the init section is placed where it belongs',
+    fs.readFileSync(d.finalPath).equals(Buffer.concat([mapChangeSegs[0], mapChangeInit, mapChangeSegs[1]])),
+    fs.readFileSync(d.finalPath).toString('hex'));
   engine.close();
   srv.server.close();
 }

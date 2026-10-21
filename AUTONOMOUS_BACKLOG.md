@@ -37,6 +37,7 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (8 suites) must be green b
 - [x] [Track B] Engine tests for priority ordering, the history cap and `clearFinished(deleteFiles=true)` — 7 new checks in the self-test.
 - [x] [Track E] Split `public/js/list.mjs` (457 lines) — the rows, the details panel, the segment bars and the filter now live in their own modules; every UI module is under 200 lines.
 - [x] [Track D] Only recompute the speed of active downloads in the engine tick, and cache the snapshot of finished downloads — 5 new checks cover the size of the live feed and the cache.
+- [x] [Track A] `lib/streams.js`: an `EXT-X-MAP` change in the middle of a playlist is ignored — the init section is now emitted right before the part that needs it.
 
 ## Blocked / Failed
 - None

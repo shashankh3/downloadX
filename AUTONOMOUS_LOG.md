@@ -139,3 +139,17 @@ Base commit: 5efc3a3 (origin/main)
   the segment table, recent ones keep it, and unchanged entries are reused.
 - Verification: `npm run lint` clean; `npm test` -> 111/111, 62/62, 66/66, 33/33,
   33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-22T00:40:00Z — [Track A] an init section change mid-playlist
+- Files: `lib/stream.js`, `test/streams.test.mjs`
+- An HLS playlist may switch its initialisation section (a new EXT-X-MAP) in
+  the middle. The task builder only ever emitted one init section - the last
+  one in the playlist - and put it in front of every part, so such a stream
+  was assembled incorrectly.
+- The init section is now emitted right before the first part that needs it.
+  DASH keeps one init section per representation, which the same rule
+  produces.
+- Added 2 checks: the init section ends up between the two parts, and the
+  ordinary fMP4 and DASH cases are unchanged.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 62/62, 66/66, 33/33,
+  35/35, 46/46, 87/87, 28/28.
