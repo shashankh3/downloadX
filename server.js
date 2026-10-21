@@ -749,6 +749,11 @@ async function start() {
   }
 
   if (!claim.acquired) {
+    if (claim.starting) {
+      console.log('[downloadX] downloadX is already starting — give it a moment and try again.');
+      if (process.env.DLX_OPEN === '1') openPath('http://127.0.0.1:' + (claim.port || PORT) + '/', false);
+      return;
+    }
     const shown = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST;
     const ui = `http://${shown.includes(':') ? `[${shown}]` : shown}:${claim.port}/`;
     console.log(`[downloadX] Already running at ${ui}`);

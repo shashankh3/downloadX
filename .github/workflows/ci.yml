@@ -29,6 +29,8 @@ jobs:
         run: node test/installer.test.mjs
       - name: Engine self-tests
         run: node test/self-test.mjs
+      - name: Unit tests
+        run: node test/units.test.mjs
       - name: API + security tests
         run: node test/api.test.mjs
       - name: Network proxy + auth tests

@@ -36,3 +36,19 @@ Base commit: 5efc3a3 (origin/main)
   too. The UI asks for `?file=1` where its dialog promises to delete data.
 - Verification: `npm run lint` clean; `npm test` -> 99/99, 66/66, 33/33, 33/33,
   46/46, 87/87, 28/28 (4 new removal-semantics checks).
+
+### 2026-10-21T22:00:00Z — [Track B] unit tests for the small modules
+- Files: `test/units.test.mjs` (new), `lib/protocol.js`, `lib/instance.js`,
+  `server.js`, `package.json`, `.github/workflows/ci.yml`
+- Coverage added: pattern groups (negative, step, padding, malformed), instance
+  lock (stale reclaim, second claim, port file), protocol URI parsing, token
+  bucket rate changes, atomic store writes, category detection, util helpers.
+- `lib/protocol.js` had no exports and ran on import, so it could not be
+  tested. It now exports `parseCommand()` and only auto-runs when it is the
+  entry point.
+- Bonus fix found by the new tests: a second launch while the first instance was
+  still starting threw "Another downloadX instance is starting..." instead of
+  reporting that downloadX is already running. The lock now returns
+  `{ acquired: false, starting: true }` and the server prints a friendly note.
+- Verification: `npm run lint` clean; `npm test` -> 99/99, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.
