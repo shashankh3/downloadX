@@ -112,3 +112,17 @@ Base commit: 5efc3a3 (origin/main)
   `clearFinished(deleteFiles=true)` really deletes the files.
 - Verification: `npm run lint` clean; `npm test` -> 106/106, 62/62, 66/66, 33/33,
   33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-22T00:00:00Z — [Track E] split the web UI modules
+- Files: `public/js/list.mjs`, `public/js/rows.mjs` (new),
+  `public/js/details.mjs` (new), `public/js/segments.mjs` (new),
+  `public/js/filter.mjs` (new)
+- public/js/list.mjs was 457 lines and mixed filtering, the header, the rows,
+  the segment bars and the details panel. The rows, the details panel, the
+  segment bars and the filter are now separate modules; every UI module is
+  under 200 lines.
+- The filter moved to its own module so the rows and the list can both use it
+  without an import cycle.
+- Verification: `npm run lint` clean; `npm test` -> 106/106, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28; a headless Chrome run loads all 13 modules
+  without a console error.

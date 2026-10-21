@@ -35,6 +35,7 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (8 suites) must be green b
 - [x] [Track D] Reuse HTTP connections via a dedicated keep-alive agent — new `lib/agents.js` with a bounded socket pool; the probe now drains its one-byte body so the socket returns to the pool instead of being torn down.
 - [x] [Track E] Split `lib/download.js` (1202 lines) — the HTTP range transfer and the HLS/DASH capture now live in `lib/transfer.js` and `lib/stream.js` and are mixed into the class. The moved methods are byte-identical to the original; the file is down to 705 lines.
 - [x] [Track B] Engine tests for priority ordering, the history cap and `clearFinished(deleteFiles=true)` — 7 new checks in the self-test.
+- [x] [Track E] Split `public/js/list.mjs` (457 lines) — the rows, the details panel, the segment bars and the filter now live in their own modules; every UI module is under 200 lines.
 
 ## Blocked / Failed
 - None
