@@ -214,7 +214,7 @@ function buildRow() {
     el: root, tilebox: q('.tilebox'), rname: q('.rname'), mstat: q('.mstat'), msize: q('.msize'),
     mspeed: q('.mspeed'), meta: q('.meta'), merr: q('.merr'),
     barWrap: q('.bar-wrap'), segbar: q('.segbar'), pct: q('.pct'),
-    actions: q('.raction'), details: q('.rdetails'), actionsFor: '', detailsBuilt: false,
+    actions: q('.raction'), details: q('.rdetails'), actionsFor: '', detailsBuilt: false, sig: '',
   };
   const main = q('.row-main');
   main.tabIndex = 0;
@@ -241,8 +241,26 @@ function toggleDetails(id) {
   if (it && row) { row.detailsBuilt = false; updateRow(row, it); }
 }
 
+/**
+ * A cheap fingerprint of everything a row renders. When it does not change the
+ * row is left alone, so a long history does not re-write itself every frame.
+ */
+function rowSignature(it) {
+  return [
+    it.status, it.filename, it.category, it.received, it.total,
+    Math.round((it.speed || 0) / 1024), it.eta, it.error,
+    it.activeConnections, it.stream || '',
+    it.segments ? it.segments.length : 0,
+    it.checksum ? it.checksum.at : 0,
+    ui.expanded.has(it.id) ? 'x' : '-',
+  ].join('|');
+}
+
 function updateRow(row, it) {
   row.el.dataset.id = it.id;
+  const sig = rowSignature(it);
+  if (row.sig === sig) return;
+  row.sig = sig;
   row.el.className = 'row ' + it.status;
   row.tilebox.innerHTML = catTile(it.category);
   row.rname.textContent = it.filename;

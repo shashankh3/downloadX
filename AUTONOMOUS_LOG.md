@@ -64,3 +64,14 @@ Base commit: 5efc3a3 (origin/main)
 - Verification: `npm run lint` clean (1 advisory: `lib/download.js` is long —
   that is the next refactoring task); `npm test` -> 99/99, 62/62, 66/66, 33/33,
   33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-21T22:35:00Z — [Track D] less work per live frame
+- Files: `lib/engine.js`, `public/js/list.mjs`
+- The engine serialised a segment table for every download in the history on
+  every live frame (up to 2000 items x 64 segments). Segment tables are now
+  only kept for the working set — active, paused and queued downloads plus the
+  most recent entries — and older ones are marked `segmentsOmitted`.
+- The UI re-wrote every row on every frame even when nothing had changed. Rows
+  now carry a signature and are only touched when their data actually differs.
+- Verification: `npm run lint` clean; `npm test` -> 99/99, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.
