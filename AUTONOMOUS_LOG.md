@@ -186,3 +186,15 @@ Base commit: 5efc3a3 (origin/main)
   every action, the settings with their defaults and limits, and the status
   codes.
 - Verification: `npm run lint` clean; `npm test` unchanged and green.
+
+### 2026-10-22T02:00:00Z — [Track F] types, the extension build and a flaky test
+- Files: `lib/*.js`, `package.json`, `test/self-test.mjs`
+- The exported helpers, the `Engine` and `Download` classes and the mixin
+  methods now carry JSDoc parameter and return types.
+- `npm run build:extension` prepares the Chrome and Firefox packages from the
+  sources in `extension/`.
+- The schedule test used a window from `:00` to `:59` of the current hour and
+  therefore failed in the last minute of every hour. It now uses a window
+  around the current minute.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 73/73, 66/66, 33/33,
+  35/35, 49/49, 87/87, 28/28.

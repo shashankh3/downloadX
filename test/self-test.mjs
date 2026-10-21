@@ -337,11 +337,18 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   const dataDir = path.join(TMP, 'engine9');
   const engine = new Engine(dataDir);
   const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
+  // A window around the current minute, so the check cannot fall out of the
+  // window while the test runs (it used to break in the last minute of an hour).
+  const minuteOfDay = now.getHours() * 60 + now.getMinutes();
+  const hhmm = (m) => {
+    const v = ((m % 1440) + 1440) % 1440;
+    return String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
+  };
   engine.settings.scheduleEnabled = true;
-  engine.settings.scheduleFrom = hh + ':00';
-  engine.settings.scheduleTo = hh + ':59';
-  check('schedule: current hour is inside window', engine._inScheduleWindow());
+  engine.settings.scheduleFrom = hhmm(minuteOfDay - 1);
+  engine.settings.scheduleTo = hhmm(minuteOfDay + 1);
+  check('schedule: the current minute is inside the window', engine._inScheduleWindow(),
+    engine.settings.scheduleFrom + '-' + engine.settings.scheduleTo);
   engine.settings.scheduleFrom = '00:00';
   engine.settings.scheduleTo = '00:01';
   const inside = engine._inScheduleWindow();

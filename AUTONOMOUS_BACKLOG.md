@@ -41,6 +41,9 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (8 suites) must be green b
 - [x] [Track A] Reject `chrome-extension://` origins that are not the installed extension id — the check moved to `lib/origin.js` and the ids can now be pinned with `DLX_EXTENSION_IDS` or `extension.allowedIds`. Unpacked extensions keep working because their id depends on the folder.
 - [x] [Track B] Test the FTP client when the data connection dies in the middle of a transfer — the test found that a short read without any progress looped forever; such a read now counts as an error.
 - [x] [Track F] Add `docs/API.md` with the complete REST reference — every endpoint, every action, the settings and the status codes.
+- [x] [Track F] Add JSDoc type annotations to the public functions of `lib/*` — the exported helpers, the two classes and the mixin methods now carry parameter and return types.
+- [x] [Track E] Add a `npm run build:extension` script that prepares the browser packages.
+- [x] [Track B] Fix the flaky schedule test — it used a window that ended in the current minute and broke in the last minute of every hour.
 
 ## Blocked / Failed
 - None

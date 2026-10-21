@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node server.js",
     "build:exe": "node installer/build-exe.mjs",
+    "build:extension": "node installer/prepare-extension.mjs --out extension",
     "package:manifests": "node installer/make-packages.mjs",
     "lint": "node scripts/lint.mjs",
     "check": "npm run lint && npm test",
