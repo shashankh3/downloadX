@@ -178,3 +178,11 @@ Base commit: 5efc3a3 (origin/main)
 - Added 3 checks.
 - Verification: `npm run lint` clean; `npm test` -> 111/111, 73/73, 66/66, 33/33,
   35/35, 49/49, 87/87, 28/28.
+
+### 2026-10-22T01:40:00Z — [Track F] the REST reference
+- Files: `docs/API.md` (new), `README.md`
+- The API was only documented as a list of curl commands in the README. There
+  is now a complete reference: every endpoint, the body and the answer of
+  every action, the settings with their defaults and limits, and the status
+  codes.
+- Verification: `npm run lint` clean; `npm test` unchanged and green.

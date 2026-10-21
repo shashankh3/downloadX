@@ -196,6 +196,9 @@ capped at 1000 URLs per request.
 
 ## REST API (everything the UI does)
 
+The complete reference lives in **[docs/API.md](docs/API.md)**. The most used
+calls:
+
 ```bash
 # add a download (16 connections, referer for hotlink-protected sites)
 curl -X POST http://127.0.0.1:9765/api/downloads \
@@ -338,6 +341,8 @@ The server is local-only and hardened against drive-by attacks from websites:
 
 ```
 server.js          HTTP API + SSE + static UI (no dependencies)
+docs/ARCHITECTURE.md   how the code is put together
+docs/API.md            the complete REST reference
 lib/engine.js      queue, scheduling, persistence, connection budget
 lib/download.js    one download: probe → segment → transfer → verify → finalize
 lib/httpget.js     redirect-following range-aware HTTP client (proxy, Basic/Digest)

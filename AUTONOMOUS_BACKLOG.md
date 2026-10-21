@@ -40,6 +40,7 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (8 suites) must be green b
 - [x] [Track A] `lib/streams.js`: an `EXT-X-MAP` change in the middle of a playlist is ignored — the init section is now emitted right before the part that needs it.
 - [x] [Track A] Reject `chrome-extension://` origins that are not the installed extension id — the check moved to `lib/origin.js` and the ids can now be pinned with `DLX_EXTENSION_IDS` or `extension.allowedIds`. Unpacked extensions keep working because their id depends on the folder.
 - [x] [Track B] Test the FTP client when the data connection dies in the middle of a transfer — the test found that a short read without any progress looped forever; such a read now counts as an error.
+- [x] [Track F] Add `docs/API.md` with the complete REST reference — every endpoint, every action, the settings and the status codes.
 
 ## Blocked / Failed
 - None
