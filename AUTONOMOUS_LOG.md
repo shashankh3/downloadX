@@ -52,3 +52,15 @@ Base commit: 5efc3a3 (origin/main)
   `{ acquired: false, starting: true }` and the server prints a friendly note.
 - Verification: `npm run lint` clean; `npm test` -> 99/99, 62/62, 66/66, 33/33,
   33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-21T22:20:00Z — [Track C] static rules in the linter
+- Files: `scripts/lint.mjs`
+- Added: no `var`, no loose equality (except against `null`), no `require()`
+  inside a function body, plus warnings for oversized files and functions.
+- To keep the rules accurate the scanner strips comments, string literals,
+  template literals and regular expressions first, and tracks function scopes
+  separately from plain blocks (so `try { ... }` and object literals are not
+  mistaken for function bodies).
+- Verification: `npm run lint` clean (1 advisory: `lib/download.js` is long —
+  that is the next refactoring task); `npm test` -> 99/99, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.

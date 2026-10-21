@@ -34,6 +34,7 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (6 suites) must be green b
 - [x] [Track A] Fix `remove()` deleting the `.dxpart` file even when `deleteFiles` was not requested — removing a list entry no longer touches the disk; the UI asks for `?file=1` explicitly. Orphaned `.audio.m4a` parts are now cleaned up as well.
 - [x] [Track B] Unit tests for patterns/instance/protocol/bucket/store/categories/util edge cases — new `test/units.test.mjs` with 62 checks; `lib/protocol.js` was refactored to export `parseCommand()` and only auto-run when invoked directly.
 - [x] [Track A] A second instance launch reported a hard error while the first was still starting — the lock now reports "already starting" instead of throwing.
+- [x] [Track C] Extend the linter with real static rules — now forbids `var`, loose equality and `require()` inside functions, and warns about oversized files/functions. Comments, strings and regex literals are stripped before scanning, so there are no false positives.
 
 ## Completed
 - None
