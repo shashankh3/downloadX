@@ -29,13 +29,13 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (6 suites) must be green b
 ## In Progress
 - None
 
-## Completed
-- [x] [Track A] Guard `_pump()` against a data chunk arriving after the transfer was settled (stream leak / late write) — root cause was Node emitting several `data` events per tick; chunk handling is now serialised through a promise chain. Range requests for one segmented download dropped from 2779 to 63, short reads from hundreds to 0.
+## Completed- [x] [Track A] Guard `_pump()` against a data chunk arriving after the transfer was settled (stream leak / late write) — root cause was Node emitting several `data` events per tick; chunk handling is now serialised through a promise chain. Range requests for one segmented download dropped from 2779 to 63, short reads from hundreds to 0.
 - [x] [Track A] Fix `remove()` deleting the `.dxpart` file even when `deleteFiles` was not requested — removing a list entry no longer touches the disk; the UI asks for `?file=1` explicitly. Orphaned `.audio.m4a` parts are now cleaned up as well.
 - [x] [Track B] Unit tests for patterns/instance/protocol/bucket/store/categories/util edge cases — new `test/units.test.mjs` with 62 checks; `lib/protocol.js` was refactored to export `parseCommand()` and only auto-run when invoked directly.
 - [x] [Track A] A second instance launch reported a hard error while the first was still starting — the lock now reports "already starting" instead of throwing.
 - [x] [Track C] Extend the linter with real static rules — now forbids `var`, loose equality and `require()` inside functions, and warns about oversized files/functions. Comments, strings and regex literals are stripped before scanning, so there are no false positives.
 - [x] [Track D] Skip DOM work for unchanged rows and shrink the live snapshot — the engine only ships segment tables for the working set, and rows are only rewritten when their data changed.
+- [x] [Track D] Reuse HTTP connections via a dedicated keep-alive agent — new `lib/agents.js` with a bounded socket pool; the probe now drains its one-byte body so the socket returns to the pool instead of being torn down.
 
 ## Completed
 - None

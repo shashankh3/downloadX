@@ -75,3 +75,18 @@ Base commit: 5efc3a3 (origin/main)
   now carry a signature and are only touched when their data actually differs.
 - Verification: `npm run lint` clean; `npm test` -> 99/99, 62/62, 66/66, 33/33,
   33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-21T22:50:00Z — [Track D] keep-alive agent
+- Files: `lib/agents.js` (new), `lib/httpget.js`, `lib/download.js`, `server.js`,
+  `test/self-test.mjs`
+- Range requests are the common case, so the connections are worth keeping.
+  A dedicated agent with a bounded socket pool (64 sockets, 16 idle) is used
+  instead of the process-wide global agent, and the agents are closed on
+  shutdown.
+- The probe used to destroy its response, which killed the socket. It now
+  drains the one-byte body so the connection can be reused.
+- The connection-limit test counted a request as busy until its socket closed;
+  with keep-alive that measured the wrong thing, so it now counts until the
+  response is finished and ignores the one-byte probe.
+- Verification: `npm run lint` clean; `npm test` -> 99/99, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28 (3 consecutive self-test runs green).

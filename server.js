@@ -12,6 +12,7 @@ const { Engine, normalizeSettings } = require('./lib/engine');
 const { expandPatternDetailed } = require('./lib/patterns');
 const { InstanceLock, writePortFile, removePortFile } = require('./lib/instance');
 const httpget = require('./lib/httpget');
+const { destroyAgents } = require('./lib/agents');
 const { freeSpaceFor } = require('./lib/util');
 const { version: VERSION } = require('./lib/version');
 
@@ -713,6 +714,7 @@ function shutdown(code = 0) {
   } catch (e) {
     console.error('[downloadX] shutdown save failed:', e.message);
   }
+  try { destroyAgents(); } catch { /* already gone */ }
   if (boundPort) removePortFile(DATA_DIR, boundPort);
   if (instanceLock) instanceLock.release();
   for (const c of sseClients) { try { c.end(); } catch { /* gone */ } }

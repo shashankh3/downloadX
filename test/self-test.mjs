@@ -548,11 +548,17 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   let live = 0;
   let peak = 0;
   const srvC = await makeServer((req, res) => {
-    live++;
-    peak = Math.max(peak, live);
     const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
     let start = 0, end = BLOB.length - 1;
     if (m) { start = parseInt(m[1], 10); if (m[2]) end = Math.min(parseInt(m[2], 10), BLOB.length - 1); }
+    // The probe asks for a single byte and is finished before the server
+    // notices; only the real transfers count towards the concurrency peak.
+    const counted = end - start + 1 > 1;
+    if (counted) { live++; peak = Math.max(peak, live); }
+    let released = false;
+    const release = () => { if (counted && !released) { released = true; live--; } };
+    res.on('finish', release);
+    req.on('close', release);
     res.writeHead(m ? 206 : 200, {
       'Content-Length': String(end - start + 1),
       'Accept-Ranges': 'bytes',
@@ -561,7 +567,7 @@ const URL_BASE = `http://127.0.0.1:${port}`;
     const buf = BLOB.subarray(start, end + 1);
     let pos = 0;
     const iv = setInterval(() => {
-      if (res.destroyed || pos >= buf.length) { clearInterval(iv); live--; if (!res.destroyed) res.end(); return; }
+      if (res.destroyed || pos >= buf.length) { clearInterval(iv); release(); if (!res.destroyed) res.end(); return; }
       const n = Math.min(64 * 1024, buf.length - pos);
       res.write(buf.subarray(pos, pos + n));
       pos += n;
