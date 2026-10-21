@@ -31,6 +31,7 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (6 suites) must be green b
 
 ## Completed
 - [x] [Track A] Guard `_pump()` against a data chunk arriving after the transfer was settled (stream leak / late write) — root cause was Node emitting several `data` events per tick; chunk handling is now serialised through a promise chain. Range requests for one segmented download dropped from 2779 to 63, short reads from hundreds to 0.
+- [x] [Track A] Fix `remove()` deleting the `.dxpart` file even when `deleteFiles` was not requested — removing a list entry no longer touches the disk; the UI asks for `?file=1` explicitly. Orphaned `.audio.m4a` parts are now cleaned up as well.
 
 ## Completed
 - None

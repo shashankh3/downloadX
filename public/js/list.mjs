@@ -298,14 +298,14 @@ function renderActions(row, it) {
     add('pause', 'Pause', () => act('pause'));
     add('stop', 'Stop & remove', async () => {
       if (await confirmRemove('Stop download?', `"${it.filename}" will be stopped and its partial data removed.`, 'Stop')) {
-        api(`/api/downloads/${it.id}`, { method: 'DELETE' }).catch((e) => toast(e.message, 'err'));
+        api(`/api/downloads/${it.id}?file=1`, { method: 'DELETE' }).catch((e) => toast(e.message, 'err'));
       }
     }, true);
   } else if (it.status === 'paused') {
     add('play', 'Resume', () => act('resume'));
     add('stop', 'Remove', async () => {
       if (await confirmRemove('Remove download?', `"${it.filename}" and its partial data will be removed.`, 'Remove')) {
-        api(`/api/downloads/${it.id}`, { method: 'DELETE' }).catch((e) => toast(e.message, 'err'));
+        api(`/api/downloads/${it.id}?file=1`, { method: 'DELETE' }).catch((e) => toast(e.message, 'err'));
       }
     }, true);
   } else if (it.status === 'failed' || it.status === 'canceled') {

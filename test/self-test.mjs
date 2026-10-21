@@ -617,6 +617,29 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   srvH.close();
 }
 
+/* ---------------- removal semantics ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine22'));
+  engine.settings.rootDir = path.join(TMP, 'files22');
+
+  const a = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 4 });
+  await waitFor(() => a.received > 256 * 1024, 20000);
+  await a.pause('user');
+  const partA = a.partPath;
+  check('remove: a partial file exists', fs.existsSync(partA));
+  await engine.remove(a.id, false);
+  check('remove: the list entry is gone', engine.get(a.id) === undefined);
+  check('remove: files are kept when deleteFiles is off', fs.existsSync(partA));
+
+  const b = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 4 });
+  await waitFor(() => b.received > 256 * 1024, 20000);
+  await b.pause('user');
+  const partB = b.partPath;
+  await engine.remove(b.id, true);
+  check('remove: files are deleted when deleteFiles is on', !fs.existsSync(partB));
+  engine.close();
+}
+
 srv.close();
 
 const failed = results.filter((r) => !r.ok);
