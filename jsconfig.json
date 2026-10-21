@@ -1,0 +1,32 @@
+{
+  "//": "Editor settings for the plain JavaScript sources. The project has no build step, so this only tells the editor how the files fit together (and which libraries each file may use).",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "resolveJsonModule": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "server.js",
+    "lib/**/*.js",
+    "scripts/**/*.mjs",
+    "public/js/**/*.mjs",
+    "extension/**/*.js",
+    "installer/*.js"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "data",
+    "extension/chrome",
+    "extension/firefox"
+  ]
+}

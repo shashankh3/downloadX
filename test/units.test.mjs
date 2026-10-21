@@ -173,6 +173,42 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   })());
 }
 
+/* ---------------- lib/ftp.js: the control channel parser ---------------- */
+{
+  const { Control } = require('../lib/ftp.js');
+  const { PassThrough } = require('node:stream');
+  const sock = new PassThrough();
+  const control = new Control(sock, 2000);
+
+  // A single line reply.
+  const single = control.readReply(2000);
+  sock.write('220 ready\r\n');
+  const singleReply = await single;
+  check('ftp: a single line reply is parsed', singleReply.code === 220 && /ready/.test(singleReply.text));
+
+  // A multi line reply: the first line announces more, the last one ends it.
+  const multi = control.readReply(2000);
+  sock.write('211-Features:\r\n REST STREAM\r\n SIZE\r\n211 End\r\n');
+  const multiReply = await multi;
+  check('ftp: a multi line reply keeps every line', multiReply.code === 211 && multiReply.text.split('\n').length === 4, JSON.stringify(multiReply.text));
+  check('ftp: the multi line reply keeps the feature', /REST STREAM/.test(multiReply.text));
+
+  // A reply that is split across two packets.
+  const split = control.readReply(2000);
+  sock.write('502 Not ');
+  await new Promise((r) => setTimeout(r, 20));
+  sock.write('implemented\r\n');
+  const splitReply = await split;
+  check('ftp: a reply split over two packets is joined', splitReply.code === 502 && /not implemented/i.test(splitReply.text));
+
+  // A line that is not a reply at all must not confuse the parser.
+  const noisy = control.readReply(2000);
+  sock.write('garbage line\r\n250 ok\r\n');
+  const noisyReply = await noisy;
+  check('ftp: a stray line is ignored', noisyReply.code === 250, JSON.stringify(noisyReply));
+  control.destroy();
+}
+
 /* ---------------- lib/origin.js ---------------- */
 {
   const { createOriginCheck, normalizeIds } = require('../lib/origin.js');

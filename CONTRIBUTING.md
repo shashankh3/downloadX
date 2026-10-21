@@ -39,6 +39,8 @@ npm run check           # lint + tests
 - `'use strict';` at the top of every CommonJS file.
 - Comments explain *why*, not *what*.
 - Keep functions small; keep one concern per module.
+- `jsconfig.json` tells your editor how the sources fit together — the project
+  itself has no build step and no type checker.
 
 ## Reporting bugs
 

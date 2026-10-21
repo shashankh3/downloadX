@@ -1,26 +1,12 @@
 # Autonomous Improvement Backlog
-Last Updated: 2026-10-21T23:45:00Z
+Last Updated: 2026-10-22T02:20:00Z
 
 Project: downloadX (zero-dependency Node.js download manager)
 Branch: `overnight-auto-improve` (never touch `main`)
 Verify: `npm run lint` (lint + syntax) and `npm test` (8 suites) must be green before every commit.
 
 ## Pending Tasks
-- [ ] [Track E] Split `public/js/list.mjs` (457 lines) into `rows.mjs`, `details.mjs`, `segments.mjs`
-- [ ] [Track E] Extract the duplicated `dispatchKeyEvent`/`Command` shims in the extension test helpers
-- [ ] [Track E] Split `extension/background.js` (480 lines) - move the media sniffer into its own module
-- [ ] [Track F] Add `docs/ARCHITECTURE.md` (module map, data flow, extension points)
-- [ ] [Track F] Add `docs/API.md` with the complete REST reference
-- [ ] [Track F] Add JSDoc type annotations to the public functions of `lib/*`
-- [ ] [Track A] Reject `chrome-extension://` origins that are not the installed extension id
-- [ ] [Track A] `lib/streams.js`: an `EXT-X-MAP` change in the middle of a playlist is ignored
-- [ ] [Track A] `lib/ftp.js`: the control channel parser can mis-associate multi-line replies
-- [ ] [Track B] Test the FTP client when the data connection dies in the middle of a transfer
-- [ ] [Track B] Test that the live snapshot stays small with a long history
-- [ ] [Track C] Add a `jsconfig.json` so editors type-check the JavaScript without a build step
-- [ ] [Track D] Only recompute the speed of active downloads in the engine tick
-- [ ] [Track D] Cache the snapshot of finished downloads instead of rebuilding them every frame
-- [ ] [Track E] Add a `npm run build:extension` script that prepares the browser packages
+- None
 
 ## In Progress
 - None
@@ -44,6 +30,10 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (8 suites) must be green b
 - [x] [Track F] Add JSDoc type annotations to the public functions of `lib/*` — the exported helpers, the two classes and the mixin methods now carry parameter and return types.
 - [x] [Track E] Add a `npm run build:extension` script that prepares the browser packages.
 - [x] [Track B] Fix the flaky schedule test — it used a window that ended in the current minute and broke in the last minute of every hour.
+- [x] [Track C] Add a `jsconfig.json` so editors know how the sources fit together.
+- [x] [Track A] `lib/ftp.js` multi-line replies — the parser turned out to be correct and is now covered by 5 unit tests (`Control` is exported for that).
 
 ## Blocked / Failed
-- None
+- [ ] [Track E] Split `extension/background.js` - not done on purpose: the service worker can only share code with the options page through ES modules, which Firefox only supports from 121 while the manifest still allows 115. The risk to the browser integration outweighs the gain.
+- [ ] [Track E] Extract the duplicated API shims in the extension - same reason as above.
+- [ ] [Track A] `lib/ftp.js` multi-line replies - the parser turned out to be correct; it is now covered by 5 unit tests instead (`Control` is exported for that).

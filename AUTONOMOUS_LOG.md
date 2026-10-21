@@ -198,3 +198,23 @@ Base commit: 5efc3a3 (origin/main)
   around the current minute.
 - Verification: `npm run lint` clean; `npm test` -> 111/111, 73/73, 66/66, 33/33,
   35/35, 49/49, 87/87, 28/28.
+
+### 2026-10-22T02:20:00Z - [Track A] the FTP control channel parser
+- Files: `lib/ftp.js`, `test/units.test.mjs`
+- The reply parser was not reachable from a test because `Control` was private.
+  It is exported now and covered by 5 checks: single line replies, multi line
+  replies, a reply split over two packets and a stray line in front of a
+  reply. The parser itself turned out to be correct.
+- Added a `jsconfig.json` so editors resolve the modules and libraries
+  correctly.
+- Verification: `npm run lint` clean; `npm run test:all` -> 111/111, 78/78,
+  66/66, 33/33, 35/35, 49/49, 87/87, 28/28, 15/15, 6/6, 74/74.
+  The standalone EXE was rebuilt and serves every module.
+
+## Summary
+
+14 atomic commits on `overnight-auto-improve`. The test suite grew from
+448 to 582 checks. Two files that were too big were split (lib/download.js
+1202 -> 705 lines, public/js/list.mjs 457 -> 167 lines) and the linter learned
+real static rules. The bugs that were found and fixed are listed in the
+[CHANGELOG](CHANGELOG.md).
