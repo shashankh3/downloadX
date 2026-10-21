@@ -53,6 +53,8 @@ function startFtp(options = {}) {
   const supportRest = options.supportRest !== false;
   const auth = options.auth || null;
   const chunkDelayMs = options.chunkDelayMs || 0;
+  /* Send only this many bytes and then cut the data connection. */
+  const cutAfterBytes = options.cutAfterBytes === undefined ? null : options.cutAfterBytes;
   const log = { cmds: [], rests: [], retrs: 0 };
   const server = net.createServer((sock) => {
     let authed = !auth;
@@ -135,8 +137,13 @@ function startFtp(options = {}) {
             const conn = await waitData(5000);
             if (!conn) { send('425 no data connection'); continue; }
             const slice = file.subarray(off);
-            conn.on('close', () => send('226 transfer complete'));
-            if (chunkDelayMs && slice.length > 65536) {
+            let cut = false;
+            conn.on('close', () => { if (!cut) send('226 transfer complete'); });
+            if (cutAfterBytes !== null) {
+              cut = true;
+              conn.write(slice.subarray(0, Math.min(cutAfterBytes, slice.length)));
+              setTimeout(() => { try { conn.destroy(); } catch { /* gone */ } }, 20);
+            } else if (chunkDelayMs && slice.length > 65536) {
               let pos = 0;
               const iv = setInterval(() => {
                 if (conn.destroyed || pos >= slice.length) {
@@ -283,6 +290,25 @@ const base = `ftp://127.0.0.1:${ftp.port}`;
   const d = engine.add({ urls: [`ftp://127.0.0.1:${ftp.port}/small.txt`] });
   check('engine: ftp URL accepted', !!d && d.urls[0].startsWith('ftp://'));
   engine.close();
+}
+
+/* ---------------- the data connection dies in the middle ---------------- */
+{
+  // The server accepts the transfer but never delivers a byte.
+  const cutFtp = await startFtp({ files: { '/file.bin': FILE }, cutAfterBytes: 0 });
+  const engine = new Engine(path.join(TMP, 'engine-cut'));
+  engine.settings.rootDir = path.join(TMP, 'files-cut');
+  engine.settings.maxRetries = 2;
+  const d = engine.add({ urls: [`ftp://127.0.0.1:${cutFtp.port}/file.bin`], segments: 1 });
+  const done = await waitFor(() => {
+    const it = engine.get(d.id);
+    return ['completed', 'failed'].includes(it.status) ? it : null;
+  }, 60000);
+  check('engine+ftp: a data connection without data fails cleanly', done.status === 'failed', done.status);
+  check('engine+ftp: the failure is reported', !!done.error && done.error.length > 0, done.error);
+  check('engine+ftp: no corrupt file is left behind', !fs.existsSync(done.finalPath));
+  engine.close();
+  cutFtp.server.close();
 }
 
 /* ---------------- file-type coverage ---------------- */

@@ -166,3 +166,15 @@ Base commit: 5efc3a3 (origin/main)
 - Added 11 checks for the origin rules.
 - Verification: `npm run lint` clean; `npm test` -> 111/111, 73/73, 66/66, 33/33,
   35/35, 46/46, 87/87, 28/28.
+
+### 2026-10-22T01:25:00Z — [Track B] a short read without progress
+- Files: `lib/download.js`, `test/ftp.test.mjs`
+- The new test (an FTP server that accepts the transfer but never delivers a
+  byte) found that a short read which made no progress was retried forever:
+  the retry path did not count towards the error budget.
+- A short read that delivered something is still just a connection that closed
+  early and the segment continues. A short read without any progress now
+  counts as an error, so the download fails cleanly instead of looping.
+- Added 3 checks.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 73/73, 66/66, 33/33,
+  35/35, 49/49, 87/87, 28/28.

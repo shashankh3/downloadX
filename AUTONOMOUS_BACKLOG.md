@@ -39,6 +39,7 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (8 suites) must be green b
 - [x] [Track D] Only recompute the speed of active downloads in the engine tick, and cache the snapshot of finished downloads — 5 new checks cover the size of the live feed and the cache.
 - [x] [Track A] `lib/streams.js`: an `EXT-X-MAP` change in the middle of a playlist is ignored — the init section is now emitted right before the part that needs it.
 - [x] [Track A] Reject `chrome-extension://` origins that are not the installed extension id — the check moved to `lib/origin.js` and the ids can now be pinned with `DLX_EXTENSION_IDS` or `extension.allowedIds`. Unpacked extensions keep working because their id depends on the folder.
+- [x] [Track B] Test the FTP client when the data connection dies in the middle of a transfer — the test found that a short read without any progress looped forever; such a read now counts as an error.
 
 ## Blocked / Failed
 - None
