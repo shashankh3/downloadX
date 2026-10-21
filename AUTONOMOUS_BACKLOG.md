@@ -1,35 +1,32 @@
 # Autonomous Improvement Backlog
-Last Updated: 2026-10-21T21:10:00Z
+Last Updated: 2026-10-21T23:45:00Z
 
 Project: downloadX (zero-dependency Node.js download manager)
 Branch: `overnight-auto-improve` (never touch `main`)
-Verify: `npm run lint` (lint + syntax) and `npm test` (6 suites) must be green before every commit.
+Verify: `npm run lint` (lint + syntax) and `npm test` (8 suites) must be green before every commit.
 
 ## Pending Tasks
-- [ ] [Track A] Guard `_pump()` against a data chunk arriving after the transfer was settled (stream leak / late write)
-- [ ] [Track A] Fix `remove()` deleting the `.dxpart` file even when `deleteFiles` was not requested
-- [ ] [Track B] Unit tests for `lib/patterns.js` edge cases (negative ranges, zero-padding of negatives, step>range)
-- [ ] [Track B] Unit tests for `lib/instance.js` stale-lock recovery and port-file handling
-- [ ] [Track B] Unit tests for `lib/protocol.js` `downloadx://` URI parsing (add/open/invalid)
-- [ ] [Track B] Unit tests for `lib/bucket.js` `setRate()` behaviour while throttled
-- [ ] [Track B] Unit tests for `lib/store.js` atomic write (tmp cleanup, corrupt fallback)
-- [ ] [Track B] Engine tests for priority ordering, `_trimHistory()` cap and `clearFinished(deleteFiles=true)`
-- [ ] [Track C] Extend the linter: forbid `var`, loose `==`, and `require()` inside functions
-- [ ] [Track C] Extend the linter: max file length (400 lines) and max function length (120 lines) warnings
-- [ ] [Track D] Skip DOM work for unchanged rows in `public/js/list.mjs` (re-render cost per SSE frame)
-- [ ] [Track D] Cap the number of items serialised into an SSE snapshot; report a truncated count
-- [ ] [Track D] Reuse HTTP connections for segment requests via a dedicated keep-alive agent
 - [ ] [Track E] Split `public/js/list.mjs` (457 lines) into `rows.mjs`, `details.mjs`, `segments.mjs`
-- [ ] [Track E] Split `lib/download.js` (1100 lines) into `download.js`, `transfer.js`, `stream.js`
 - [ ] [Track E] Extract the duplicated `dispatchKeyEvent`/`Command` shims in the extension test helpers
+- [ ] [Track E] Split `extension/background.js` (480 lines) - move the media sniffer into its own module
 - [ ] [Track F] Add `docs/ARCHITECTURE.md` (module map, data flow, extension points)
+- [ ] [Track F] Add `docs/API.md` with the complete REST reference
 - [ ] [Track F] Add JSDoc type annotations to the public functions of `lib/*`
 - [ ] [Track A] Reject `chrome-extension://` origins that are not the installed extension id
+- [ ] [Track A] `lib/streams.js`: an `EXT-X-MAP` change in the middle of a playlist is ignored
+- [ ] [Track A] `lib/ftp.js`: the control channel parser can mis-associate multi-line replies
+- [ ] [Track B] Test the FTP client when the data connection dies in the middle of a transfer
+- [ ] [Track B] Test that the live snapshot stays small with a long history
+- [ ] [Track C] Add a `jsconfig.json` so editors type-check the JavaScript without a build step
+- [ ] [Track D] Only recompute the speed of active downloads in the engine tick
+- [ ] [Track D] Cache the snapshot of finished downloads instead of rebuilding them every frame
+- [ ] [Track E] Add a `npm run build:extension` script that prepares the browser packages
 
 ## In Progress
 - None
 
-## Completed- [x] [Track A] Guard `_pump()` against a data chunk arriving after the transfer was settled (stream leak / late write) — root cause was Node emitting several `data` events per tick; chunk handling is now serialised through a promise chain. Range requests for one segmented download dropped from 2779 to 63, short reads from hundreds to 0.
+## Completed
+- [x] [Track A] Guard `_pump()` against a data chunk arriving after the transfer was settled — root cause was Node emitting several `data` events per tick; chunk handling is now serialised through a promise chain. Range requests for one segmented download dropped from 2779 to 63, short reads from hundreds to 0.
 - [x] [Track A] Fix `remove()` deleting the `.dxpart` file even when `deleteFiles` was not requested — removing a list entry no longer touches the disk; the UI asks for `?file=1` explicitly. Orphaned `.audio.m4a` parts are now cleaned up as well.
 - [x] [Track B] Unit tests for patterns/instance/protocol/bucket/store/categories/util edge cases — new `test/units.test.mjs` with 62 checks; `lib/protocol.js` was refactored to export `parseCommand()` and only auto-run when invoked directly.
 - [x] [Track A] A second instance launch reported a hard error while the first was still starting — the lock now reports "already starting" instead of throwing.
@@ -38,9 +35,6 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (6 suites) must be green b
 - [x] [Track D] Reuse HTTP connections via a dedicated keep-alive agent — new `lib/agents.js` with a bounded socket pool; the probe now drains its one-byte body so the socket returns to the pool instead of being torn down.
 - [x] [Track E] Split `lib/download.js` (1202 lines) — the HTTP range transfer and the HLS/DASH capture now live in `lib/transfer.js` and `lib/stream.js` and are mixed into the class. The moved methods are byte-identical to the original; the file is down to 705 lines.
 - [x] [Track B] Engine tests for priority ordering, the history cap and `clearFinished(deleteFiles=true)` — 7 new checks in the self-test.
-
-## Completed
-- None
 
 ## Blocked / Failed
 - None
