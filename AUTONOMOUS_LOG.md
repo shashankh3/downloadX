@@ -126,3 +126,16 @@ Base commit: 5efc3a3 (origin/main)
 - Verification: `npm run lint` clean; `npm test` -> 106/106, 62/62, 66/66, 33/33,
   33/33, 46/46, 87/87, 28/28; a headless Chrome run loads all 13 modules
   without a console error.
+
+### 2026-10-22T00:20:00Z — [Track D] cheaper engine tick and cached snapshots
+- Files: `lib/engine.js`, `server.js`, `test/self-test.mjs`
+- The tick measured the speed of every download in the history, although only
+  live transfers have a speed.
+- Snapshots of unchanged downloads are now cached, so the live feed does not
+  rebuild the whole history on every frame. Because the snapshots are shared,
+  the server now replaces entries with copies instead of trimming them in
+  place.
+- Added 5 checks: the live feed stays small with 500 entries, old entries omit
+  the segment table, recent ones keep it, and unchanged entries are reused.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.

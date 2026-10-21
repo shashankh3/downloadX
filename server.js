@@ -368,13 +368,17 @@ function buildSnapshot() {
   const snap = engine.snapshot();
   let json = JSON.stringify(snap);
   if (json.length <= MAX_SSE_PAYLOAD) return json;
-  for (const item of snap.items) {
-    if (item.status !== 'downloading' && item.status !== 'probing') item.segments = [];
-  }
-  json = JSON.stringify(snap);
+  // The snapshots may be cached and shared, so they are never modified in
+  // place - the items are replaced by copies instead.
+  const trimmed = { ...snap, items: snap.items.map((item) => (
+    item.status !== 'downloading' && item.status !== 'probing'
+      ? { ...item, segments: [] }
+      : item
+  )) };
+  json = JSON.stringify(trimmed);
   if (json.length <= MAX_SSE_PAYLOAD) return json;
-  for (const item of snap.items) item.segments = [];
-  return JSON.stringify(snap);
+  trimmed.items = trimmed.items.map((item) => ({ ...item, segments: [] }));
+  return JSON.stringify(trimmed);
 }
 
 setInterval(() => {

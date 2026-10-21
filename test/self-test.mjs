@@ -692,6 +692,32 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   engine.close();
 }
 
+/* ---------------- the live snapshot stays small ---------------- */
+{
+  const { Download } = require('../lib/engine.js');
+  const engine = new Engine(path.join(TMP, 'engine26'));
+  for (let i = 0; i < 500; i++) {
+    const d = new Download(engine, {
+      id: 's' + i, urls: ['http://x/a.bin'], filename: 'f' + i + '.bin',
+      status: 'completed', addedAt: 1000 + i, total: 1000,
+      segments: [{ start: 0, end: 999, downloaded: 1000 }],
+    });
+    engine.items.set(d.id, d);
+  }
+  const snap = engine.snapshot();
+  const json = JSON.stringify(snap);
+  // 500 entries with their full segment tables would be more than a megabyte.
+  check('snapshot: a long history stays small', json.length < 400 * 1024, `${(json.length / 1024).toFixed(0)} KB`);
+  check('snapshot: every download is still listed', snap.items.length === 500);
+  const old = snap.items.find((i) => i.id === 's0');
+  check('snapshot: old entries omit the segment table', old.segments.length === 0 && old.segmentsOmitted === true);
+  const recent = snap.items[snap.items.length - 1];
+  check('snapshot: recent entries keep the segment table', recent.segments.length === 1);
+  const again = engine.snapshot();
+  check('snapshot: unchanged entries are not rebuilt', again.items[again.items.length - 1] === recent);
+  engine.close();
+}
+
 srv.close();
 
 const failed = results.filter((r) => !r.ok);
