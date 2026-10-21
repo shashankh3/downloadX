@@ -173,6 +173,25 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   })());
 }
 
+/* ---------------- lib/origin.js ---------------- */
+{
+  const { createOriginCheck, normalizeIds } = require('../lib/origin.js');
+  const open = createOriginCheck();
+  check('origin: no origin is allowed', open('') === true);
+  check('origin: loopback is allowed', open('http://127.0.0.1:9765') === true);
+  check('origin: localhost is allowed', open('http://localhost:9765') === true);
+  check('origin: an extension is allowed by default', open('chrome-extension://abcdefghijklmnopabcdefghijklmnop') === true);
+  check('origin: a foreign site is rejected', open('https://evil.example') === false);
+  check('origin: a look-alike host is rejected', open('http://127.0.0.1.evil.example') === false);
+  check('origin: a file url is rejected', open('file:///C:/evil.html') === false);
+
+  const pinned = createOriginCheck({ allowedIds: 'AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPP' });
+  check('origin: the pinned extension is allowed', pinned('chrome-extension://aabbccddeeffgghhiijjkkllmmnnoopp') === true);
+  check('origin: another extension is rejected', pinned('chrome-extension://ppppooonnmllkkjjiihhggffeedccbbaa') === false);
+  check('origin: loopback still works when pinned', pinned('http://127.0.0.1:9765') === true);
+  check('origin: ids are normalised', JSON.stringify(normalizeIds(' AA , bb ')) === '["aa","bb"]');
+}
+
 /* ---------------- report ---------------- */
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

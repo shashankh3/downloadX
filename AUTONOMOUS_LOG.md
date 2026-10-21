@@ -153,3 +153,16 @@ Base commit: 5efc3a3 (origin/main)
   ordinary fMP4 and DASH cases are unchanged.
 - Verification: `npm run lint` clean; `npm test` -> 111/111, 62/62, 66/66, 33/33,
   35/35, 46/46, 87/87, 28/28.
+
+### 2026-10-22T01:00:00Z — [Track A] the browser origin allowlist
+- Files: `lib/origin.js` (new), `server.js`, `installer/config.json`,
+  `test/units.test.mjs`, `README.md`
+- The origin check lived inside server.js and could not be tested. It now
+  lives in lib/origin.js and the extension ids it accepts can be pinned with
+  `DLX_EXTENSION_IDS` or `extension.allowedIds` in installer/config.json.
+- Pinning is opt-in on purpose: an extension loaded unpacked gets an id that
+  depends on the folder it lives in, so it cannot be pinned ahead of time and
+  would break.
+- Added 11 checks for the origin rules.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 73/73, 66/66, 33/33,
+  35/35, 46/46, 87/87, 28/28.
