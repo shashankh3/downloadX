@@ -36,6 +36,7 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (6 suites) must be green b
 - [x] [Track C] Extend the linter with real static rules — now forbids `var`, loose equality and `require()` inside functions, and warns about oversized files/functions. Comments, strings and regex literals are stripped before scanning, so there are no false positives.
 - [x] [Track D] Skip DOM work for unchanged rows and shrink the live snapshot — the engine only ships segment tables for the working set, and rows are only rewritten when their data changed.
 - [x] [Track D] Reuse HTTP connections via a dedicated keep-alive agent — new `lib/agents.js` with a bounded socket pool; the probe now drains its one-byte body so the socket returns to the pool instead of being torn down.
+- [x] [Track E] Split `lib/download.js` (1202 lines) — the HTTP range transfer and the HLS/DASH capture now live in `lib/transfer.js` and `lib/stream.js` and are mixed into the class. The moved methods are byte-identical to the original; the file is down to 705 lines.
 
 ## Completed
 - None

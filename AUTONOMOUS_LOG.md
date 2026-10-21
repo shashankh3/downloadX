@@ -90,3 +90,17 @@ Base commit: 5efc3a3 (origin/main)
   response is finished and ignores the one-byte probe.
 - Verification: `npm run lint` clean; `npm test` -> 99/99, 62/62, 66/66, 33/33,
   33/33, 46/46, 87/87, 28/28 (3 consecutive self-test runs green).
+
+### 2026-10-21T23:15:00Z — [Track E] split lib/download.js
+- Files: `lib/transfer.js` (new), `lib/stream.js` (new), `lib/download.js`,
+  `lib/naming.js`, `lib/engine.js`
+- lib/download.js was 1202 lines and mixed three concerns. The HTTP range
+  transfer (probe, connection slots, byte pump) moved to lib/transfer.js, the
+  HLS/DASH capture to lib/stream.js, and the header sanitiser to lib/naming.js.
+  The mixin methods are copied onto the prototype with their original
+  descriptors, so they behave exactly like the methods defined in the class.
+- The method bodies were moved with a script, not by hand: a verification pass
+  confirmed that all 15 moved methods are byte-identical to the original.
+- Sizes: download.js 1202 -> 705, transfer.js 325, stream.js 205.
+- Verification: `npm run lint` clean (no size warning left); `npm test` ->
+  99/99, 62/62, 66/66, 33/33, 33/33, 46/46, 87/87, 28/28.
