@@ -646,6 +646,52 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   engine.close();
 }
 
+/* ---------------- priority ordering ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine23'));
+  engine.settings.rootDir = path.join(TMP, 'files23');
+  engine.settings.maxConcurrent = 1;
+  const low = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 1, filename: 'low.bin', priority: 0 });
+  const high = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 1, filename: 'high.bin', priority: 10 });
+  await waitFor(() => high.status !== 'queued', 20000);
+  check('priority: the higher priority item starts first', low.status === 'queued', `${low.status}/${high.status}`);
+  await low.cancel();
+  await high.cancel();
+  engine.close();
+}
+
+/* ---------------- history is trimmed ---------------- */
+{
+  const { Download } = require('../lib/engine.js');
+  const engine = new Engine(path.join(TMP, 'engine24'));
+  for (let i = 0; i < 2100; i++) {
+    const d = new Download(engine, {
+      id: 'x' + i, urls: ['http://x/a.bin'], filename: 'f' + i + '.bin',
+      status: 'completed', addedAt: 1000 + i,
+    });
+    engine.items.set(d.id, d);
+  }
+  engine._trimHistory();
+  check('history: the list is capped', engine.items.size === 2000, String(engine.items.size));
+  check('history: the newest entries are kept', engine.items.has('x2099'));
+  check('history: the oldest entries are dropped', !engine.items.has('x0'));
+  engine.close();
+}
+
+/* ---------------- clearing finished items can delete their files ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine25'));
+  engine.settings.rootDir = path.join(TMP, 'files25');
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 2, filename: 'clearme.bin' });
+  await waitFor(() => d.status === 'completed', 60000);
+  const finalPath = d.finalPath;
+  check('clear: the file is on disk before clearing', fs.existsSync(finalPath));
+  const removed = await engine.clearFinished(true);
+  check('clear: the entry is removed', removed === 1 && engine.items.size === 0);
+  check('clear: the file is deleted when asked for', !fs.existsSync(finalPath));
+  engine.close();
+}
+
 srv.close();
 
 const failed = results.filter((r) => !r.ok);

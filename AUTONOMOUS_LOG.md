@@ -104,3 +104,11 @@ Base commit: 5efc3a3 (origin/main)
 - Sizes: download.js 1202 -> 705, transfer.js 325, stream.js 205.
 - Verification: `npm run lint` clean (no size warning left); `npm test` ->
   99/99, 62/62, 66/66, 33/33, 33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-21T23:30:00Z — [Track B] engine tests for the queue and the history
+- Files: `test/self-test.mjs`
+- Added 7 checks: the higher priority item starts first, the download history
+  is capped at 2000 entries (the newest are kept), and
+  `clearFinished(deleteFiles=true)` really deletes the files.
+- Verification: `npm run lint` clean; `npm test` -> 106/106, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.
