@@ -12,8 +12,10 @@ const { Engine, normalizeSettings } = require('./lib/engine');
 const { expandPatternDetailed } = require('./lib/patterns');
 const { InstanceLock, writePortFile, removePortFile } = require('./lib/instance');
 const httpget = require('./lib/httpget');
+const { freeSpaceFor } = require('./lib/util');
+const { version: VERSION } = require('./lib/version');
 
-const VERSION = require('./package.json').version;
+const DEBUG = !!process.env.DLX_DEBUG;
 
 /* ---------------- update check ---------------- */
 const UPDATE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -154,6 +156,7 @@ function startEngine() {
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
@@ -292,7 +295,7 @@ function serveStatic(req, res, pathname) {
     const headers = {
       'Content-Type': MIME[ext] || 'application/octet-stream',
       'Content-Length': stat.size,
-      'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=300',
+      'Cache-Control': 'no-cache',
       'ETag': etag,
       'Last-Modified': stat.mtime.toUTCString(),
       ...SECURITY_HEADERS,
@@ -353,6 +356,25 @@ function serveExtensionFile(req, res, pathname) {
 /* ---------------- SSE ---------------- */
 const sseClients = new Set();
 let lastPing = 0;
+const MAX_SSE_PAYLOAD = 2 * 1024 * 1024;
+
+/**
+ * Build the live snapshot, shrinking it when it would be too large to push to
+ * every connected browser. Segment tables are only needed for live progress,
+ * so finished items lose them first.
+ */
+function buildSnapshot() {
+  const snap = engine.snapshot();
+  let json = JSON.stringify(snap);
+  if (json.length <= MAX_SSE_PAYLOAD) return json;
+  for (const item of snap.items) {
+    if (item.status !== 'downloading' && item.status !== 'probing') item.segments = [];
+  }
+  json = JSON.stringify(snap);
+  if (json.length <= MAX_SSE_PAYLOAD) return json;
+  for (const item of snap.items) item.segments = [];
+  return JSON.stringify(snap);
+}
 
 setInterval(() => {
   if (!engine || !sseClients.size) return;
@@ -360,7 +382,7 @@ setInterval(() => {
   try {
     if (engine.dirty) {
       engine.dirty = false;
-      payload = `event: snapshot\ndata: ${JSON.stringify(engine.snapshot())}\n\n`;
+      payload = `event: snapshot\ndata: ${buildSnapshot()}\n\n`;
     }
   } catch (e) {
     console.error('[downloadX] snapshot failed:', e.message);
@@ -387,6 +409,16 @@ async function handleApi(req, res, pathname, query) {
 
   if (pathname === '/api/state') return json(res, 200, engine.snapshot());
 
+  if (pathname === '/api/free-space' && method === 'GET') {
+    const dir = engine.settings.rootDir;
+    const free = freeSpaceFor(dir);
+    return json(res, 200, {
+      ok: true,
+      dir,
+      free: free == null ? null : Math.round(free),
+    });
+  }
+
   if (pathname === '/api/update-check' && method === 'GET') {
     try {
       return json(res, 200, { ok: true, ...(await checkForUpdate()) });
@@ -404,7 +436,7 @@ async function handleApi(req, res, pathname, query) {
       ...SECURITY_HEADERS,
       ...corsHeaders(req.headers.origin),
     });
-    res.write(`retry: 2000\n\nevent: snapshot\ndata: ${JSON.stringify(engine.snapshot())}\n\n`);
+    res.write(`retry: 2000\n\nevent: snapshot\ndata: ${buildSnapshot()}\n\n`);
     engine.dirty = false;
     sseClients.add(res);
     const cleanup = () => sseClients.delete(res);
@@ -431,6 +463,7 @@ async function handleApi(req, res, pathname, query) {
     const mirrors = Array.isArray(body.mirrors)
       ? body.mirrors.filter((u) => /^(https?|ftps?):\/\//i.test(String(u))).map((u) => String(u).trim())
       : [];
+    const mirrorList = [...new Set(mirrors)].filter((m) => !urls.includes(m));
     const base = {
       filename: typeof body.filename === 'string' ? body.filename : '',
       category: typeof body.category === 'string' ? body.category : undefined,
@@ -451,7 +484,7 @@ async function handleApi(req, res, pathname, query) {
     try {
       if (urls.length > 1) {
         const created = urls.map((u) => engine.add({
-          urls: [u, ...mirrors],
+          urls: [u, ...mirrorList],
           ...base,
           filename: '',
           skipSave: true,
@@ -459,7 +492,7 @@ async function handleApi(req, res, pathname, query) {
         engine.saveNow();
         return json(res, 201, { batch: created.map((d) => d.snapshot()), count: created.length });
       }
-      const d = engine.add({ urls: [urls[0], ...mirrors], ...base });
+      const d = engine.add({ urls: [urls[0], ...mirrorList], ...base });
       return json(res, 201, d.snapshot());
     } catch (e) { return json(res, 400, { error: e.message }); }
   }
@@ -528,7 +561,9 @@ async function handleApi(req, res, pathname, query) {
   if (pathname === '/api/settings' && method === 'GET') return json(res, 200, engine.settings);
   if (pathname === '/api/settings' && (method === 'PUT' || method === 'POST')) {
     const body = await readBody(req);
-    const allowed = ['rootDir', 'maxConcurrent', 'defaultSegments', 'globalSpeedLimit', 'organizeByCategory', 'scheduleEnabled', 'scheduleFrom', 'scheduleTo', 'shutdownWhenDone', 'proxy', 'allowInvalidTls', 'notifications', 'notificationSound', 'updateUrl'];
+    const allowed = ['rootDir', 'maxConcurrent', 'maxConnections', 'defaultSegments', 'globalSpeedLimit',
+      'organizeByCategory', 'scheduleEnabled', 'scheduleFrom', 'scheduleTo', 'shutdownWhenDone', 'proxy',
+      'allowInvalidTls', 'notifications', 'notificationSound', 'updateUrl', 'maxRetries'];
     const patch = {};
     for (const k of allowed) if (k in body) patch[k] = body[k];
     engine.settings = normalizeSettings(patch, engine.settings);
@@ -599,6 +634,12 @@ function isAllowedHost(hostHeader) {
 
 const server = http.createServer((req, res) => {
   res.__origin = req.headers.origin;
+  if (DEBUG) {
+    const started = Date.now();
+    res.on('finish', () => {
+      console.error(`[downloadX] ${req.method} ${req.url} -> ${res.statusCode} (${Date.now() - started}ms)`);
+    });
+  }
   if (!isAllowedHost(req.headers.host)) {
     res.writeHead(403, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
     return res.end('Forbidden host');

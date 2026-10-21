@@ -20,11 +20,12 @@ playable file (TS/fMP4, AES-128 decryption included).
 | Feature | downloadX | IDM | Ghost Downloader | Free download managers |
 |---|---|---|---|---|
 | Multi-connection segmented engine | ✅ up to **64** connections, dynamic splitting | ✅ 32 | ✅ | ✅ (usually 8–16) |
+| Global connection budget | ✅ one cap for the whole app | ❌ | ❌ | ❌ |
 | Protocols | ✅ HTTP/HTTPS + **FTP/FTPS** (multi-connection via REST) | ✅ HTTP/FTP | ✅ HTTP | mixed |
 | **HLS / DASH** media capture | ✅ playlists → one file, AES-128, fMP4, byte ranges | partial | ❌ | rare |
 | **Live per-segment progress** visualization | ✅ every connection shown in real time | ❌ | ❌ | ❌ |
-| Pause / resume across app restarts | ✅ validated with `If-Range` (ETag or Last-Modified) | ✅ | ✅ | mixed |
-| Auto-retry with exponential backoff + `Retry-After` | ✅ | basic | basic | mixed |
+| Pause / resume across app restarts | ✅ validated with `If-Range` (ETag or Last-Modified), part file re-validated | ✅ | ✅ | mixed |
+| Auto-retry with exponential backoff + `Retry-After` | ✅ with jitter, configurable retry count | basic | basic | mixed |
 | **Mirror URLs** — failover per request | ✅ | ❌ | ❌ | rare |
 | Sequential batch patterns `file[01-99].zip` | ✅ built-in (ranges, steps, lists, letters, cartesian) | ❌ | ❌ | ❌ |
 | Checksum verification (SHA-256/1/512, MD5) | ✅ auto-verify + on-demand | ❌ | ❌ | rare |
@@ -33,12 +34,13 @@ playable file (TS/fMP4, AES-128 decryption included).
 | Scheduler window (e.g. only 23:00–07:00) | ✅ | ✅ | ❌ | rare |
 | Shutdown PC when queue empties | ✅ with cancel countdown | ✅ | ❌ | rare |
 | Browser integration | ✅ Chrome/Edge/Firefox MV3 extension + installer auto-setup | ✅ | ✅ | mixed |
-| Full **REST API** + SSE live feed | ✅ script anything | ❌ | ❌ | aria2 only |
+| **Full REST API** + SSE live feed | ✅ script anything | ❌ | ❌ | aria2 only |
 | Referer / cookies for picky sites | ✅ | ✅ | ❌ | mixed |
 | Custom headers + **Basic/Digest auth** | ✅ per download | ✅ | ❌ | rare |
 | Proxy support (HTTP/HTTPS/SOCKS5, per download) | ✅ | ✅ | ❌ | rare |
 | Media sniffing + floating page button | ✅ extension | ✅ | ❌ | ❌ |
 | Smart capture rules + site exclusions | ✅ | basic | ❌ | ❌ |
+| Free space check before a download starts | ✅ | ❌ | ❌ | ❌ |
 | Price | **free forever** | $25 + nags | free w/ limits | free w/ ads |
 | Portable | ✅ single folder, zero deps, state in `/data` | ❌ installer | ❌ installer | mixed |
 
@@ -85,6 +87,9 @@ Paste a URL anywhere on the page (Ctrl+V), or drop a link onto the window, to op
 Add dialog pre-filled. The interface ships with a clean light theme by default; the
 moon/sun button in the sidebar footer switches to a dark theme with a Driver Booster-style
 navy-and-blue look, and your choice is remembered.
+
+Keyboard shortcuts: `Ctrl+F` search, `Ctrl+N` new download, `Ctrl+K` focus the list,
+`Enter`/`Space` expand a row, `?` shows the full list, `Esc` closes a dialog.
 
 ### Environment variables
 
@@ -143,6 +148,10 @@ There are three modes, chosen automatically by `install.bat`:
   Developer mode → **Load unpacked** → select `extension\chrome`. The Settings dialog has
   an **Install browser extension** button that opens the right folder for you.
 
+The extension also finds downloadX on its own: if the default port does not answer it
+scans the range the installer uses (`9765-9775`) in parallel and remembers the working
+port. `Alt+Shift+D` toggles interception without touching the mouse.
+
 Firefox: open `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on** →
 `extension\firefox\manifest.json`. Automatic install requires an AMO listing — set
 `firefoxInstallUrl` in `installer/config.json` and the installer writes the Firefox
@@ -193,6 +202,7 @@ curl -X POST http://127.0.0.1:9765/api/downloads \
 
 curl http://127.0.0.1:9765/api/health                      # version, pid, uptime
 curl http://127.0.0.1:9765/api/state                       # full snapshot
+curl http://127.0.0.1:9765/api/free-space                  # free bytes on the download volume
 curl http://127.0.0.1:9765/api/settings
 curl -X POST http://127.0.0.1:9765/api/downloads/<id>/pause
 curl -X POST http://127.0.0.1:9765/api/downloads/<id>/resume
@@ -223,10 +233,10 @@ curl http://127.0.0.1:9765/api/update-check                 # optional update ma
 `filename`, `category`, `segments`, `speedLimitKBs`, `mirrors`, `referer`, `cookies`,
 `headers` (object), `username`, `password`, `proxy`, `dir`, `expectedChecksum`,
 `checksumAlgo`, `priority` and `startedPaused`. Multi-URL requests create one download
-per URL and ignore `filename`.
+per URL and ignore `filename`. Mirrors are de-duplicated against the primary URL.
 
 `GET /api/update-check` is unconfigured by default. Set `updateUrl` in settings to an
-HTTPS JSON manifest such as `{"version":"1.3.0","url":"https://…/downloadX.exe","notes":"…"}`;
+HTTPS JSON manifest such as `{"version":"1.4.0","url":"https://…/downloadX.exe","notes":"…"}`;
 the UI shows a dismissible banner when the manifest advertises a newer version. Results are
 cached for 6 h and the check honours the global proxy/TLS settings.
 
@@ -252,14 +262,26 @@ The server is local-only and hardened against drive-by attacks from websites:
   with the most bytes left and fetch it in 8 MB chunks with positioned writes into a
   pre-allocated `.dxpart` file. When a segment gets ahead, the largest remaining one
   is **split dynamically**, so slow servers never strand a single long tail connection.
+- **Connection budget** — every socket (probes, segments, playlist parts) passes through
+  one global semaphore. `maxConnections` (default 64, `0` = unlimited) caps the number of
+  connections the whole app may open, so three parallel downloads can no longer open
+  192 sockets at once.
 - **Resume** — segment progress persists every ~1.5 s to `data/state.json`. On resume
   each range continues exactly where it stopped, validated with `If-Range`; if the file
-  changed server-side the download auto-restarts instead of corrupting.
-- **Robustness** — per-segment retries with exponential backoff and `Retry-After`
-  support, mirror rotation on 4xx/5xx, wrong-range and overshoot clamping, early-close
-  detection, unknown-size (chunked) single-stream handling, fatal disk errors
-  (`ENOSPC`, `EDQUOT`, …) surfaced immediately, and a fallback to a single streaming
-  connection for range-less servers.
+  changed server-side the download auto-restarts instead of corrupting. The saved
+  segment table must cover the file exactly (no gaps, no overlaps) and the `.dxpart`
+  file must still be large enough for the recorded progress — otherwise the transfer
+  restarts from zero instead of writing a corrupt file.
+- **Disk space** — before a download starts, the free space on the target volume is
+  compared with the remaining size; a download that cannot possibly fit fails
+  immediately with a clear message instead of dying half-way with `ENOSPC`.
+- **Robustness** — per-segment retries with exponential back-off (jittered, so many
+  downloads do not retry in lockstep) and `Retry-After` support, mirror rotation on
+  4xx/5xx, wrong-range and overshoot clamping, early-close detection, unknown-size
+  (chunked) single-stream handling, fatal disk errors (`ENOSPC`, `EDQUOT`, …) surfaced
+  immediately, and a fallback to a single streaming connection for range-less servers.
+  The retry count before a download is marked as failed is configurable
+  (`maxRetries`, default 12).
 - **FTP / FTPS** — the same engine drives FTP servers: `SIZE`/`MDTM`/`REST` probe the
   file, each segment resumes with a byte offset, `PASV`/`EPSV` data channels with a
   private-IP fallback, anonymous or user/password login, and `ftps://` (explicit TLS).
@@ -299,21 +321,29 @@ The server is local-only and hardened against drive-by attacks from websites:
 
 ```
 server.js          HTTP API + SSE + static UI (no dependencies)
-lib/engine.js      segmented download engine, queue, scheduler, checksums
+lib/engine.js      queue, scheduling, persistence, connection budget
+lib/download.js    one download: probe → segment → transfer → verify → finalize
 lib/httpget.js     redirect-following range-aware HTTP client (proxy, Basic/Digest)
 lib/ftp.js         FTP/FTPS client (REST offsets, PASV/EPSV, TLS) with the same contract
 lib/streams.js     HLS/DASH playlist parsing, AES-128, part fetching helpers
 lib/bucket.js      token-bucket rate limiter
 lib/patterns.js    batch URL pattern expander
+lib/naming.js      file-name and checksum helpers
+lib/categories.js  category tables and MIME/extension detection
+lib/settings.js    settings defaults, validation and clamping
+lib/util.js        small shared helpers (paths, back-off, free space)
 lib/store.js       atomic JSON state persistence
 lib/instance.js    single-instance lock + port-file helpers
 lib/protocol.js    downloadx:// protocol handler
-public/            the web UI (vanilla JS, no build step)
+lib/version.js     single source of truth for the version string
+public/            the web UI (vanilla ES modules, no build step)
+public/js/         UI modules: state, rendering, dialogs, API client, helpers
 extension/         Chrome/Edge/Firefox MV3 connector (background, content UI, options)
 installer/         Windows installer, CRX3 builder, extension preparation
 installer/build-exe.mjs  standalone EXE builder (pkg + icon/version resources + signing)
 installer/make-packages.mjs  winget + Chocolatey manifests with the real SHA-256
 packaging/         generated winget/choco manifests (npm run package:manifests)
+scripts/lint.mjs   dependency-free project hygiene checks (npm run lint)
 native/host.cs     native messaging host (compiled by the installer)
 test/              self-contained test suites + benchmark
 data/              runtime state (created on first run)
@@ -325,13 +355,16 @@ dist/              build output: downloadX.exe, downloadX.ico (npm run build:exe
 Everything runs locally — no external network required.
 
 ```bash
-npm test                 # engine + API + network + streams + FTP + extension (default)
+npm test                 # engine + API + network + streams + FTP + extension + UI (default)
+npm run lint             # dependency-free hygiene checks (syntax, versions, dead files)
+npm run check            # lint + every test suite
 npm run test:engine      # engine, patterns, store, resume, mirrors, checksums…
 npm run test:api         # spawned server: REST, SSE, Host/Origin, traversal, update check
 npm run test:net         # HTTP/SOCKS5 proxies, Basic/Digest auth, custom headers
 npm run test:streams     # local HLS/DASH servers: AES-128, fMP4, byte ranges, resume
 npm run test:ftp         # local FTP server: ranged REST transfers, auth, fallbacks
 npm run test:extension   # connector + sniffer + rules + content/options files (mocked)
+npm run test:ui          # web UI modules against a DOM shim (rendering, filters, ids)
 npm run test:integration # pause/resume, batch, no-Range fallback, speed limit
 npm run test:local       # pause/resume stress against a controlled range server
 npm run test:installer   # CRX3 signing, ZIP, extension builds, installer dry-run/sandbox

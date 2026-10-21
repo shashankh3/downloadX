@@ -94,6 +94,9 @@ function makeChrome() {
       cancel: (id, cb) => { state.canceled.push(id); if (cb) cb(); return Promise.resolve(); },
       erase: (q, cb) => { state.erased.push(q); if (cb) cb(); return Promise.resolve(); },
     },
+    commands: {
+      onCommand: { addListener: (f) => { state.listeners.command = f; } },
+    },
     cookies: {
       getAll: (details, cb) => { const res = state.cookies; if (cb) cb(res); return Promise.resolve(res); },
     },
@@ -106,6 +109,7 @@ function makeFetch(state) {
     state.fetchCalls.push({ url, opts });
     if (url.endsWith('/api/health')) {
       if (!state.serverUp) throw new Error('ECONNREFUSED');
+      if (state.serverPort && !url.includes(':' + state.serverPort + '/')) throw new Error('ECONNREFUSED');
       return { ok: true, status: 200, json: async () => ({ ok: true }) };
     }
     if (url.endsWith('/api/downloads')) {
@@ -213,6 +217,27 @@ const postBody = (call) => JSON.parse(call.opts.body);
   await connector.onCreated(item);
   await connector.onCreated(item);
   check('catch: duplicate events deduped', state.canceled.length === 1 && posts(state).length === 1, `${state.canceled.length} cancels`);
+}
+
+/* ---------------- port discovery ---------------- */
+{
+  const { connector, state } = build({ storage: { intercept: true }, serverPort: 9770 });
+  await connector.onCreated({ id: 20, url: 'https://cdn.example.com/port.bin' });
+  check('discovery: app found on a non-default port', state.storage.apiBase === 'http://127.0.0.1:9770', state.storage.apiBase);
+  check('discovery: download handed over to the discovered port', state.canceled.includes(20));
+  const posted = posts(state).pop();
+  check('discovery: request went to the discovered port', !!posted && posted.url.includes(':9770/'), posted && posted.url);
+}
+
+/* ---------------- keyboard command ---------------- */
+{
+  const { connector, state } = build({ storage: { intercept: true } });
+  connector.init();
+  check('command: listener registered', typeof state.listeners.command === 'function');
+  await state.listeners.command('toggle-intercept');
+  check('command: keyboard shortcut turns interception off', state.storage.intercept === false);
+  await state.listeners.command('toggle-intercept');
+  check('command: keyboard shortcut turns interception back on', state.storage.intercept === true);
 }
 
 /* ---------------- native host fallback + safety ---------------- */

@@ -74,6 +74,16 @@ const encCipher = [
   (() => { const c = crypto.createCipheriv('aes-128-cbc', KEY, ivForSeq(9)); return Buffer.concat([c.update(encPlain[2]), c.final()]); })(),
 ];
 
+/* A plaintext whose last byte looks like a PKCS#7 padding length: it must not
+   be truncated by the unpadder. */
+const padIv = crypto.randomBytes(16);
+const padPlain = Buffer.alloc(1000, 0xab);
+padPlain[padPlain.length - 1] = 0x05;
+const padCipher = (() => {
+  const c = crypto.createCipheriv('aes-128-cbc', KEY, padIv);
+  return Buffer.concat([c.update(padPlain), c.final()]);
+})();
+
 const fmp4Init = Buffer.concat([Buffer.from('FMP4INIT'), Buffer.alloc(120, 7)]);
 const fmp4Segs = [Buffer.from('FMP4SEG0'), Buffer.from('FMP4SEG1'), Buffer.from('FMP4SEG2')];
 
@@ -130,6 +140,16 @@ function buildRoutes() {
     '#EXT-X-ENDLIST',
   ].join('\n')), 'application/vnd.apple.mpegurl');
   encCipher.forEach((b, i) => add(`/enc/e${i}.ts`, b));
+
+  add('/pad/index.m3u8', Buffer.from([
+    '#EXTM3U',
+    '#EXT-X-TARGETDURATION:4',
+    `#EXT-X-KEY:METHOD=AES-128,URI="/key.bin",IV=0x${padIv.toString('hex')}`,
+    '#EXTINF:4.0,',
+    'p0.ts',
+    '#EXT-X-ENDLIST',
+  ].join('\n')), 'application/vnd.apple.mpegurl');
+  add('/pad/p0.ts', padCipher);
 
   add('/fmp4/index.m3u8', Buffer.from([
     '#EXTM3U',
@@ -261,6 +281,17 @@ function startServer(routes) {
   check('aes: encrypted download completes', d.status === 'completed', d.error || d.status);
   check('aes: decrypted content byte-perfect', fs.readFileSync(d.finalPath).equals(Buffer.concat(encPlain)));
   check('aes: key fetched only once', srv.keyHits.count === 1, `${srv.keyHits.count} fetches`);
+  engine.close();
+  srv.server.close();
+}
+
+/* ---------------- HLS AES-128 padding edge case ---------------- */
+{
+  const srv = await startServer(buildRoutes());
+  const engine = makeEngine();
+  const d = await runDownload(engine, `http://127.0.0.1:${srv.port}/pad/index.m3u8`);
+  check('aes: plaintext ending in a padding-like byte is not truncated',
+    d.status === 'completed' && fs.readFileSync(d.finalPath).equals(padPlain), d.error || `${fs.readFileSync(d.finalPath).length} bytes`);
   engine.close();
   srv.server.close();
 }

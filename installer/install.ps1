@@ -22,7 +22,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$Version = '1.2.0'
+$Version = '0.0.0'
 try {
   $pkg = Get-Content -LiteralPath (Join-Path $ProjectRoot 'package.json') -Raw | ConvertFrom-Json
   if ($pkg.version) { $Version = [string]$pkg.version }

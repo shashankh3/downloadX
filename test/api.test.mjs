@@ -335,6 +335,30 @@ try {
     await api('/api/settings', { method: 'PUT', body: { rootDir: path.join(TMP, 'files') } });
   }
 
+  /* ---------------- connection budget + free space ---------------- */
+  {
+    const set = await api('/api/settings', { method: 'PUT', body: { maxConnections: 8, maxRetries: 5 } });
+    check('settings: connection limit stored', set.status === 200 && set.json.maxConnections === 8, JSON.stringify(set.json.maxConnections));
+    check('settings: retry count stored', set.json.maxRetries === 5, JSON.stringify(set.json.maxRetries));
+    const clamped = await api('/api/settings', { method: 'PUT', body: { maxConnections: 100000 } });
+    check('settings: connection limit clamped', clamped.json.maxConnections === 512, JSON.stringify(clamped.json.maxConnections));
+    const state = await api('/api/state');
+    check('state: connection limit reported', state.json.connectionLimit === 512, JSON.stringify(state.json.connectionLimit));
+    const space = await api('/api/free-space');
+    check('api: free space reported', space.status === 200 && space.json.ok === true && (space.json.free === null || space.json.free > 0), JSON.stringify(space.json));
+    await api('/api/settings', { method: 'PUT', body: { maxConnections: 64 } });
+  }
+
+  /* ---------------- mirrors are de-duplicated ---------------- */
+  {
+    const add = await api('/api/downloads', {
+      method: 'POST',
+      body: { url: `${fileBase}/blob.bin`, mirrors: [`${fileBase}/blob.bin`, `${fileBase}/mirror.bin`] },
+    });
+    check('api: duplicate mirror removed', add.status === 201 && add.json.urls.length === 2 && add.json.urls[0] !== add.json.urls[1], JSON.stringify(add.json.urls));
+    await api(`/api/downloads/${add.json.id}`, { method: 'DELETE' });
+  }
+
   /* ---------------- update check ---------------- */
   {
     const none = await api('/api/update-check');
@@ -387,7 +411,11 @@ try {
     const { value } = await reader.read();
     const text = new TextDecoder().decode(value);
     check('sse: streams snapshot event', res.ok && text.includes('event: snapshot') && text.includes('"items"'));
+    // Close the stream properly before aborting: tearing the socket down while
+    // the abort is in flight upsets libuv on Windows.
+    await reader.cancel().catch(() => {});
     controller.abort();
+    await sleep(50);
   }
 
   /* ---------------- graceful shutdown ---------------- */
@@ -409,14 +437,18 @@ try {
   console.error(logs);
   results.push({ name: 'suite completed without throwing', ok: false });
 } finally {
-  try { fileServer.close(); } catch { /* gone */ }
-  try { updateServer.close(); } catch { /* gone */ }
+  for (const srv of [fileServer, updateServer]) {
+    try { if (typeof srv.closeAllConnections === 'function') srv.closeAllConnections(); } catch { /* gone */ }
+    try { srv.close(); } catch { /* gone */ }
+  }
   try { child.kill(); } catch { /* already exited */ }
 }
 
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 try { fs.rmSync(TMP, { recursive: true, force: true }); } catch { /* windows lock */ }
+// Give the sockets a moment to settle — closing them twice upserts libuv on Windows.
+await sleep(150);
 if (failed.length) {
   console.log('FAILED:', failed.map((f) => f.name).join(' | '));
   process.exit(1);

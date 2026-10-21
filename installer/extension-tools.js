@@ -45,6 +45,7 @@ function firefoxManifest(src, version, firefoxId) {
   if (src.options_ui) out.options_ui = src.options_ui;
   if (src.icons) out.icons = src.icons;
   if (src.web_accessible_resources) out.web_accessible_resources = src.web_accessible_resources;
+  if (src.commands) out.commands = src.commands;
   return out;
 }
 

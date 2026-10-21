@@ -46,7 +46,7 @@
         <button class="side-setting" id="btn-settings"><span class="nav-ico" data-ico="gear"></span><span class="nav-text">Settings</span></button>
         <button class="side-setting" id="btn-theme" title="Switch between light and dark mode"><span class="nav-ico" data-ico="moon"></span><span class="nav-text" id="theme-label">Dark mode</span></button>
       </div>
-      <div class="side-version" id="side-version">downloadX v1.2</div>
+      <div class="side-version" id="side-version">downloadX</div>
     </div>
   </aside>
 
@@ -183,6 +183,8 @@
         <input id="set-root" class="input" placeholder="C:\Users\you\Downloads"></label>
       <label class="field"><span>Max simultaneous downloads</span>
         <input id="set-concurrent" class="input" type="number" min="1" max="20" value="3"></label>
+      <label class="field"><span>Max connections (0 = unlimited)</span>
+        <input id="set-maxconnections" class="input" type="number" min="0" max="512" value="64"></label>
       <label class="field"><span>Default connections per file</span>
         <input id="set-segments" class="input" type="number" min="1" max="64" value="16"></label>
       <label class="field"><span>Global speed limit (KB/s, 0 = none)</span>
@@ -193,6 +195,10 @@
       <label class="check span2"><input type="checkbox" id="set-invalid-tls"> Allow invalid TLS certificates (not recommended)</label>
       <label class="field span2"><span>Update manifest URL (optional — HTTPS JSON with <code>version</code> and <code>url</code>)</span>
         <input id="set-update-url" class="input" spellcheck="false" placeholder="https://example.com/downloadx-update.json"></label>
+      <div class="field span2 hint-row">
+        <span id="set-freespace">Free space on the download volume: —</span>
+        <button class="btn ghost" id="set-refresh-space" type="button">Refresh</button>
+      </div>
     </div>
     <fieldset class="fieldset">
       <legend>Schedule — download only inside this window</legend>
@@ -201,6 +207,11 @@
         <label class="field"><span>From (HH:MM)</span><input id="set-sched-from" class="input" type="time" value="23:00"></label>
         <label class="field"><span>To (HH:MM)</span><input id="set-sched-to" class="input" type="time" value="07:00"></label>
       </div>
+    </fieldset>
+    <fieldset class="fieldset">
+      <legend>Reliability</legend>
+      <label class="field"><span>Retries per download before it is marked as failed</span>
+        <input id="set-maxretries" class="input" type="number" min="1" max="100" value="12"></label>
     </fieldset>
     <fieldset class="fieldset">
       <legend>Notifications</legend>
@@ -220,6 +231,20 @@
   </div>
 </dialog>
 
+<!-- Keyboard shortcuts -->
+<dialog id="dlg-shortcuts" class="dlg dlg-sm" aria-labelledby="shortcuts-title">
+  <div class="dlg-head">
+    <div class="dlg-tile"><span class="ic" data-ico="help"></span></div>
+    <div><div class="dlg-title" id="shortcuts-title">Keyboard shortcuts</div><div class="dlg-sub">Everything you can do without the mouse</div></div>
+  </div>
+  <div class="dlg-body">
+    <ul id="shortcut-list" class="shortcut-list"></ul>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn primary" id="shortcuts-ok">Close</button>
+  </div>
+</dialog>
+
 <!-- Confirm dialog -->
 <dialog id="dlg-confirm" class="dlg dlg-sm" aria-labelledby="confirm-title">
   <div class="dlg-head">
@@ -235,6 +260,6 @@
 <div id="sr-status" class="sr-only" role="status" aria-live="polite"></div>
 <div id="toasts" class="toasts" role="status" aria-live="polite"></div>
 
-<script src="/app.js"></script>
+<script type="module" src="/app.mjs"></script>
 </body>
 </html>

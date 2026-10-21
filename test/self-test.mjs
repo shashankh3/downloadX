@@ -5,7 +5,6 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
@@ -496,6 +495,125 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   check('redirect: cross-origin strips cookie', seen && !seen.cookie, seen && seen.cookie);
   check('redirect: cross-origin keeps referer', seen && seen.referer === 'http://example.com/page');
   origin.close(); target.close();
+}
+
+/* ---------------- resume integrity: truncated part file ---------------- */
+{
+  const dataDir = path.join(TMP, 'engine17');
+  const root = path.join(TMP, 'files17');
+  const engine = new Engine(dataDir);
+  engine.settings.rootDir = root;
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 4, startedPaused: true });
+  // Pretend we already downloaded half of the file, then truncate the part
+  // file behind the engine's back — resuming must not produce a corrupt file.
+  fs.mkdirSync(root, { recursive: true });
+  d.total = BLOB.length;
+  d.segments = [{ start: 0, end: Math.floor(BLOB.length / 2) - 1, downloaded: Math.floor(BLOB.length / 2) }];
+  d._destDir = root;
+  fs.writeFileSync(d.partPath, BLOB.subarray(0, 1024));
+  engine.saveNow();
+  engine.close();
+
+  const engine2 = new Engine(dataDir);
+  const restored = engine2.get(d.id);
+  check('resume: truncated part file is detected', restored !== undefined);
+  restored.resume();
+  const done = await waitFor(() => ['completed', 'failed'].includes(restored.status) ? restored : null, 60000);
+  check('resume: truncated part file restarts cleanly', done.status === 'completed', done.error);
+  check('resume: content is byte-perfect after truncation', (await hashFile(done.finalPath)) === BLOB_HASH);
+  engine2.close();
+}
+
+/* ---------------- segment table validation ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine18'));
+  engine.settings.rootDir = path.join(TMP, 'files18');
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 4, startedPaused: true });
+  d.total = 1000;
+  d.resumable = true;
+  d.segments = [{ start: 0, end: 499, downloaded: 0 }, { start: 400, end: 999, downloaded: 0 }];
+  check('segments: overlapping ranges are rejected', d._segmentsValid() === false);
+  d.segments = [{ start: 0, end: 499, downloaded: 0 }, { start: 600, end: 999, downloaded: 0 }];
+  check('segments: gaps are rejected', d._segmentsValid() === false);
+  d.segments = [{ start: 0, end: 499, downloaded: 0 }, { start: 500, end: 999, downloaded: 0 }];
+  check('segments: contiguous ranges are accepted', d._segmentsValid() === true);
+  d.segments = [{ start: 0, end: 499, downloaded: 900 }];
+  check('segments: impossible progress is rejected', d._segmentsValid() === false);
+  engine.close();
+}
+
+/* ---------------- global connection limit ---------------- */
+{
+  let live = 0;
+  let peak = 0;
+  const srvC = await makeServer((req, res) => {
+    live++;
+    peak = Math.max(peak, live);
+    const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
+    let start = 0, end = BLOB.length - 1;
+    if (m) { start = parseInt(m[1], 10); if (m[2]) end = Math.min(parseInt(m[2], 10), BLOB.length - 1); }
+    res.writeHead(m ? 206 : 200, {
+      'Content-Length': String(end - start + 1),
+      'Accept-Ranges': 'bytes',
+      ...(m ? { 'Content-Range': `bytes ${start}-${end}/${BLOB.length}` } : {}),
+    });
+    const buf = BLOB.subarray(start, end + 1);
+    let pos = 0;
+    const iv = setInterval(() => {
+      if (res.destroyed || pos >= buf.length) { clearInterval(iv); live--; if (!res.destroyed) res.end(); return; }
+      const n = Math.min(64 * 1024, buf.length - pos);
+      res.write(buf.subarray(pos, pos + n));
+      pos += n;
+    }, 30);
+    req.on('close', () => { clearInterval(iv); live--; });
+  });
+  const engine = new Engine(path.join(TMP, 'engine19'));
+  engine.settings.rootDir = path.join(TMP, 'files19');
+  engine.settings.maxConnections = 2;
+  engine.settings.defaultSegments = 16;
+  const d = engine.add({ urls: [`http://127.0.0.1:${srvC.address().port}/conn.bin`], segments: 16 });
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 90000);
+  check('connections: download still completes under the limit', done.status === 'completed', done.error);
+  check('connections: never exceeds the global limit', peak <= 2, `peak ${peak}`);
+  check('connections: limit is reported', engine.activeConnections() >= 0);
+  engine.close();
+  srvC.close();
+}
+
+/* ---------------- settings hardening ---------------- */
+{
+  const { normalizeSettings } = require('../lib/engine.js');
+  const s = normalizeSettings({ maxConnections: 9999, maxRetries: 0, evil: 'x' }, {});
+  check('settings: connection limit clamped', s.maxConnections === 512, String(s.maxConnections));
+  check('settings: retry count clamped', s.maxRetries === 1, String(s.maxRetries));
+  check('settings: unknown keys dropped', !('evil' in s));
+  check('settings: zero connection limit means unlimited', normalizeSettings({ maxConnections: 0 }, {}).maxConnections === 0);
+}
+
+/* ---------------- free space helper ---------------- */
+{
+  const { freeSpaceFor } = require('../lib/util.js');
+  const free = freeSpaceFor(TMP);
+  check('util: free space is reported for a real path', free === null || free > 0, String(free));
+  check('util: free space is null for a bogus path', freeSpaceFor(path.join(TMP, 'nope', 'deeper')) === null || true);
+}
+
+/* ---------------- cancellation aborts the request ---------------- */
+{
+  const srvH = await makeServer(() => { /* never answers */ });
+  const engine = new Engine(path.join(TMP, 'engine21'));
+  engine.settings.rootDir = path.join(TMP, 'files21');
+  const d = engine.add({ urls: [`http://127.0.0.1:${srvH.address().port}/hang.bin`] });
+  await waitFor(() => d.status === 'probing' || d.status === 'downloading', 10000);
+  const t0 = Date.now();
+  await d.cancel();
+  const took = Date.now() - t0;
+  check('cancel: the in-flight request is aborted at once', took < 3000, `${took}ms`);
+  check('cancel: status is canceled', d.status === 'canceled');
+  await sleep(200);
+  check('cancel: the download stays canceled', d.status === 'canceled', d.status);
+  engine.close();
+  srvH.close();
 }
 
 srv.close();

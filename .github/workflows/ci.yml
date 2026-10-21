@@ -23,8 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
-      - name: Syntax check
-        run: node --check server.js && node --check lib/engine.js && node --check lib/httpget.js && node --check lib/ftp.js && node --check lib/streams.js && node --check lib/patterns.js && node --check lib/store.js && node --check lib/bucket.js && node --check lib/instance.js && node --check lib/protocol.js && node --check installer/crx.js && node --check installer/extension-tools.js && node --check installer/prepare-extension.mjs && node --check installer/make-packages.mjs && node --check extension/background.js && node --check extension/content.js && node --check extension/options.js && node --check public/app.js
+      - name: Lint
+        run: npm run lint
       - name: Installer + extension packaging tests
         run: node test/installer.test.mjs
       - name: Engine self-tests
@@ -39,6 +39,8 @@ jobs:
         run: node test/ftp.test.mjs
       - name: Extension connector tests
         run: node test/extension.test.mjs
+      - name: Web UI tests
+        run: node test/ui.test.mjs
       - name: Integration tests
         run: node test/run-tests.mjs
       - name: Local pause/resume tests

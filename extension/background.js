@@ -16,6 +16,9 @@ const SEEN_TTL_MS = 60000;
 const DOWN_BACKOFF_MS = 20000;
 const MEDIA_TTL_MS = 600000;
 const MEDIA_PER_TAB = 25;
+/* The installer picks the first free port in this range — the extension scans
+   the same range when the app is not reachable on the default port. */
+const PORT_RANGE = [9765, 9775];
 
 const SETTINGS_DEFAULTS = {
   intercept: true,
@@ -34,6 +37,11 @@ const AUDIO_EXT = new Set(['mp3', 'm4a', 'aac', 'flac', 'ogg', 'oga', 'wav', 'op
 
 function isDownloadUrl(value) {
   return /^(https?|ftps?):\/\//i.test(String(value || ''));
+}
+
+/** Extract the port from a local base URL. */
+function portOf(base) {
+  return parseInt((String(base || '').match(/:(\d+)$/) || [])[1], 10) || 0;
 }
 
 function extOf(value) {
@@ -109,10 +117,37 @@ function createConnector(ext, deps = {}) {
     return String((stored && stored.apiBase) || DEFAULT_API).replace(/\/+$/, '');
   }
 
+  async function setApiBaseUrl(base) {
+    const clean = String(base || '').replace(/\/+$/, '');
+    if (!clean) return;
+    await apiCall(ext.storage.local.set, ext.storage.local, [{ apiBase: clean }]);
+  }
+
   async function setApiBase(port) {
     const p = parseInt(port, 10) || 0;
-    if (!p || p === 9765) return;
-    await apiCall(ext.storage.local.set, ext.storage.local, [{ apiBase: 'http://127.0.0.1:' + p }]);
+    if (!p) return;
+    await setApiBaseUrl('http://127.0.0.1:' + p);
+  }
+
+  /** Every local base URL the app could be listening on, preferred one first. */
+  function apiCandidates(preferred) {
+    const list = [];
+    const add = (base) => { if (base && !list.includes(base)) list.push(base); };
+    add(preferred);
+    for (let port = PORT_RANGE[0]; port <= PORT_RANGE[1]; port++) add('http://127.0.0.1:' + port);
+    return list;
+  }
+
+  /**
+   * Scan the whole port range in parallel for a running downloadX.
+   * The preferred base is skipped — the caller has already tried it.
+   */
+  async function scanForApi(preferred) {
+    const rest = apiCandidates(preferred).filter((base) => base !== preferred);
+    const found = await Promise.all(
+      rest.map((base) => pingServer(base, 700).then((ok) => (ok ? base : null)))
+    );
+    return found.find(Boolean) || null;
   }
 
   async function setBadge(text, color) {
@@ -291,8 +326,14 @@ function createConnector(ext, deps = {}) {
     const api = await getApi();
     if (await pingServer(api, 1200)) {
       await postDownload(api, payload, 6000);
-      const port = parseInt((api.match(/:(\d+)$/) || [])[1], 10) || 0;
-      return { ok: true, port, via: 'http' };
+      return { ok: true, port: portOf(api), via: 'http' };
+    }
+    // The app may be running on a different port than the one we know about.
+    const found = await scanForApi(api);
+    if (found) {
+      await setApiBaseUrl(found);
+      await postDownload(found, payload, 6000);
+      return { ok: true, port: portOf(found), via: 'http' };
     }
     const reply = await sendNative(Object.assign({ cmd: 'add' }, payload));
     if (reply && reply.ok) {
@@ -435,6 +476,12 @@ function createConnector(ext, deps = {}) {
     if (ext.contextMenus && ext.contextMenus.onClicked) ext.contextMenus.onClicked.addListener(onMenuClicked);
     if (ext.downloads && ext.downloads.onCreated) ext.downloads.onCreated.addListener(onCreated);
     if (ext.action && ext.action.onClicked) ext.action.onClicked.addListener(onActionClicked);
+    if (ext.commands && ext.commands.onCommand) {
+      ext.commands.onCommand.addListener((cmd) => {
+        if (cmd !== 'toggle-intercept') return undefined;
+        return onActionClicked().catch(() => {});
+      });
+    }
     if (ext.webRequest && ext.webRequest.onHeadersReceived) {
       try {
         ext.webRequest.onHeadersReceived.addListener(
