@@ -27,7 +27,10 @@ Verify: `npm run lint` (lint + syntax) and `npm test` (6 suites) must be green b
 - [ ] [Track A] Reject `chrome-extension://` origins that are not the installed extension id
 
 ## In Progress
-- [-] [Track A] Guard `_pump()` against a data chunk arriving after the transfer was settled (stream leak / late write)
+- None
+
+## Completed
+- [x] [Track A] Guard `_pump()` against a data chunk arriving after the transfer was settled (stream leak / late write) — root cause was Node emitting several `data` events per tick; chunk handling is now serialised through a promise chain. Range requests for one segmented download dropped from 2779 to 63, short reads from hundreds to 0.
 
 ## Completed
 - None

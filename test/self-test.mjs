@@ -185,6 +185,7 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   check('engine: exact byte count', done.received === BLOB.length, `${done.received}/${BLOB.length}`);
   check('engine: content is byte-perfect', (await hashFile(done.finalPath)) === BLOB_HASH);
   check('engine: used multiple connections', requestCount >= 8, `${requestCount} ranged requests`);
+  check('engine: no range retry storm', requestCount <= 24, `${requestCount} ranged requests`);
   check('engine: no leftover part file', !fs.existsSync(done.partPath));
   engine.close();
 }
