@@ -185,6 +185,7 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   check('engine: exact byte count', done.received === BLOB.length, `${done.received}/${BLOB.length}`);
   check('engine: content is byte-perfect', (await hashFile(done.finalPath)) === BLOB_HASH);
   check('engine: used multiple connections', requestCount >= 8, `${requestCount} ranged requests`);
+  check('engine: no range retry storm', requestCount <= 24, `${requestCount} ranged requests`);
   check('engine: no leftover part file', !fs.existsSync(done.partPath));
   engine.close();
 }
@@ -336,11 +337,18 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   const dataDir = path.join(TMP, 'engine9');
   const engine = new Engine(dataDir);
   const now = new Date();
-  const hh = String(now.getHours()).padStart(2, '0');
+  // A window around the current minute, so the check cannot fall out of the
+  // window while the test runs (it used to break in the last minute of an hour).
+  const minuteOfDay = now.getHours() * 60 + now.getMinutes();
+  const hhmm = (m) => {
+    const v = ((m % 1440) + 1440) % 1440;
+    return String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
+  };
   engine.settings.scheduleEnabled = true;
-  engine.settings.scheduleFrom = hh + ':00';
-  engine.settings.scheduleTo = hh + ':59';
-  check('schedule: current hour is inside window', engine._inScheduleWindow());
+  engine.settings.scheduleFrom = hhmm(minuteOfDay - 1);
+  engine.settings.scheduleTo = hhmm(minuteOfDay + 1);
+  check('schedule: the current minute is inside the window', engine._inScheduleWindow(),
+    engine.settings.scheduleFrom + '-' + engine.settings.scheduleTo);
   engine.settings.scheduleFrom = '00:00';
   engine.settings.scheduleTo = '00:01';
   const inside = engine._inScheduleWindow();
@@ -547,11 +555,17 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   let live = 0;
   let peak = 0;
   const srvC = await makeServer((req, res) => {
-    live++;
-    peak = Math.max(peak, live);
     const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
     let start = 0, end = BLOB.length - 1;
     if (m) { start = parseInt(m[1], 10); if (m[2]) end = Math.min(parseInt(m[2], 10), BLOB.length - 1); }
+    // The probe asks for a single byte and is finished before the server
+    // notices; only the real transfers count towards the concurrency peak.
+    const counted = end - start + 1 > 1;
+    if (counted) { live++; peak = Math.max(peak, live); }
+    let released = false;
+    const release = () => { if (counted && !released) { released = true; live--; } };
+    res.on('finish', release);
+    req.on('close', release);
     res.writeHead(m ? 206 : 200, {
       'Content-Length': String(end - start + 1),
       'Accept-Ranges': 'bytes',
@@ -560,7 +574,7 @@ const URL_BASE = `http://127.0.0.1:${port}`;
     const buf = BLOB.subarray(start, end + 1);
     let pos = 0;
     const iv = setInterval(() => {
-      if (res.destroyed || pos >= buf.length) { clearInterval(iv); live--; if (!res.destroyed) res.end(); return; }
+      if (res.destroyed || pos >= buf.length) { clearInterval(iv); release(); if (!res.destroyed) res.end(); return; }
       const n = Math.min(64 * 1024, buf.length - pos);
       res.write(buf.subarray(pos, pos + n));
       pos += n;
@@ -614,6 +628,101 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   check('cancel: the download stays canceled', d.status === 'canceled', d.status);
   engine.close();
   srvH.close();
+}
+
+/* ---------------- removal semantics ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine22'));
+  engine.settings.rootDir = path.join(TMP, 'files22');
+
+  const a = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 4 });
+  await waitFor(() => a.received > 256 * 1024, 20000);
+  await a.pause('user');
+  const partA = a.partPath;
+  check('remove: a partial file exists', fs.existsSync(partA));
+  await engine.remove(a.id, false);
+  check('remove: the list entry is gone', engine.get(a.id) === undefined);
+  check('remove: files are kept when deleteFiles is off', fs.existsSync(partA));
+
+  const b = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 4 });
+  await waitFor(() => b.received > 256 * 1024, 20000);
+  await b.pause('user');
+  const partB = b.partPath;
+  await engine.remove(b.id, true);
+  check('remove: files are deleted when deleteFiles is on', !fs.existsSync(partB));
+  engine.close();
+}
+
+/* ---------------- priority ordering ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine23'));
+  engine.settings.rootDir = path.join(TMP, 'files23');
+  engine.settings.maxConcurrent = 1;
+  const low = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 1, filename: 'low.bin', priority: 0 });
+  const high = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 1, filename: 'high.bin', priority: 10 });
+  await waitFor(() => high.status !== 'queued', 20000);
+  check('priority: the higher priority item starts first', low.status === 'queued', `${low.status}/${high.status}`);
+  await low.cancel();
+  await high.cancel();
+  engine.close();
+}
+
+/* ---------------- history is trimmed ---------------- */
+{
+  const { Download } = require('../lib/engine.js');
+  const engine = new Engine(path.join(TMP, 'engine24'));
+  for (let i = 0; i < 2100; i++) {
+    const d = new Download(engine, {
+      id: 'x' + i, urls: ['http://x/a.bin'], filename: 'f' + i + '.bin',
+      status: 'completed', addedAt: 1000 + i,
+    });
+    engine.items.set(d.id, d);
+  }
+  engine._trimHistory();
+  check('history: the list is capped', engine.items.size === 2000, String(engine.items.size));
+  check('history: the newest entries are kept', engine.items.has('x2099'));
+  check('history: the oldest entries are dropped', !engine.items.has('x0'));
+  engine.close();
+}
+
+/* ---------------- clearing finished items can delete their files ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine25'));
+  engine.settings.rootDir = path.join(TMP, 'files25');
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 2, filename: 'clearme.bin' });
+  await waitFor(() => d.status === 'completed', 60000);
+  const finalPath = d.finalPath;
+  check('clear: the file is on disk before clearing', fs.existsSync(finalPath));
+  const removed = await engine.clearFinished(true);
+  check('clear: the entry is removed', removed === 1 && engine.items.size === 0);
+  check('clear: the file is deleted when asked for', !fs.existsSync(finalPath));
+  engine.close();
+}
+
+/* ---------------- the live snapshot stays small ---------------- */
+{
+  const { Download } = require('../lib/engine.js');
+  const engine = new Engine(path.join(TMP, 'engine26'));
+  for (let i = 0; i < 500; i++) {
+    const d = new Download(engine, {
+      id: 's' + i, urls: ['http://x/a.bin'], filename: 'f' + i + '.bin',
+      status: 'completed', addedAt: 1000 + i, total: 1000,
+      segments: [{ start: 0, end: 999, downloaded: 1000 }],
+    });
+    engine.items.set(d.id, d);
+  }
+  const snap = engine.snapshot();
+  const json = JSON.stringify(snap);
+  // 500 entries with their full segment tables would be more than a megabyte.
+  check('snapshot: a long history stays small', json.length < 400 * 1024, `${(json.length / 1024).toFixed(0)} KB`);
+  check('snapshot: every download is still listed', snap.items.length === 500);
+  const old = snap.items.find((i) => i.id === 's0');
+  check('snapshot: old entries omit the segment table', old.segments.length === 0 && old.segmentsOmitted === true);
+  const recent = snap.items[snap.items.length - 1];
+  check('snapshot: recent entries keep the segment table', recent.segments.length === 1);
+  const again = engine.snapshot();
+  check('snapshot: unchanged entries are not rebuilt', again.items[again.items.length - 1] === recent);
+  engine.close();
 }
 
 srv.close();

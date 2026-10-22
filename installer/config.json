@@ -4,7 +4,8 @@
     "chromeStoreId": "",
     "edgeStoreId": "",
     "firefoxAddonId": "downloadx@local",
-    "firefoxInstallUrl": ""
+    "firefoxInstallUrl": "",
+    "allowedIds": []
   },
   "install": {
     "allUsers": false,

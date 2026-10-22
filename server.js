@@ -12,6 +12,8 @@ const { Engine, normalizeSettings } = require('./lib/engine');
 const { expandPatternDetailed } = require('./lib/patterns');
 const { InstanceLock, writePortFile, removePortFile } = require('./lib/instance');
 const httpget = require('./lib/httpget');
+const { createOriginCheck } = require('./lib/origin');
+const { destroyAgents } = require('./lib/agents');
 const { freeSpaceFor } = require('./lib/util');
 const { version: VERSION } = require('./lib/version');
 
@@ -137,6 +139,15 @@ const CHROME_STORE_ID = process.env.DLX_CHROME_STORE_ID || EXT_CONFIG.chromeStor
 const EDGE_STORE_ID = process.env.DLX_EDGE_STORE_ID || EXT_CONFIG.edgeStoreId || '';
 const FIREFOX_ID = process.env.DLX_FIREFOX_ID || EXT_CONFIG.firefoxAddonId || 'downloadx@local';
 
+/*
+ * Which browser origins may reach the API. The extension ids can be pinned
+ * with DLX_EXTENSION_IDS or with "allowedIds" in installer/config.json; an
+ * unpacked extension cannot be pinned because its id depends on the folder.
+ */
+const originCheck = createOriginCheck({
+  allowedIds: process.env.DLX_EXTENSION_IDS || EXT_CONFIG.allowedIds || [],
+});
+
 function extensionFolder() {
   const built = path.join(EXT_DIR, 'chrome');
   return fs.existsSync(path.join(built, 'manifest.json')) ? built : EXT_DIR;
@@ -217,9 +228,7 @@ function json(res, code, obj) {
 }
 
 function isAllowedOrigin(origin) {
-  if (!origin) return true;
-  if (/^(chrome-extension|moz-extension):\/\//i.test(origin)) return true;
-  return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i.test(origin);
+  return originCheck(origin);
 }
 
 function corsHeaders(origin) {
@@ -367,13 +376,17 @@ function buildSnapshot() {
   const snap = engine.snapshot();
   let json = JSON.stringify(snap);
   if (json.length <= MAX_SSE_PAYLOAD) return json;
-  for (const item of snap.items) {
-    if (item.status !== 'downloading' && item.status !== 'probing') item.segments = [];
-  }
-  json = JSON.stringify(snap);
+  // The snapshots may be cached and shared, so they are never modified in
+  // place - the items are replaced by copies instead.
+  const trimmed = { ...snap, items: snap.items.map((item) => (
+    item.status !== 'downloading' && item.status !== 'probing'
+      ? { ...item, segments: [] }
+      : item
+  )) };
+  json = JSON.stringify(trimmed);
   if (json.length <= MAX_SSE_PAYLOAD) return json;
-  for (const item of snap.items) item.segments = [];
-  return JSON.stringify(snap);
+  trimmed.items = trimmed.items.map((item) => ({ ...item, segments: [] }));
+  return JSON.stringify(trimmed);
 }
 
 setInterval(() => {
@@ -713,6 +726,7 @@ function shutdown(code = 0) {
   } catch (e) {
     console.error('[downloadX] shutdown save failed:', e.message);
   }
+  try { destroyAgents(); } catch { /* already gone */ }
   if (boundPort) removePortFile(DATA_DIR, boundPort);
   if (instanceLock) instanceLock.release();
   for (const c of sseClients) { try { c.end(); } catch { /* gone */ } }
@@ -749,6 +763,11 @@ async function start() {
   }
 
   if (!claim.acquired) {
+    if (claim.starting) {
+      console.log('[downloadX] downloadX is already starting — give it a moment and try again.');
+      if (process.env.DLX_OPEN === '1') openPath('http://127.0.0.1:' + (claim.port || PORT) + '/', false);
+      return;
+    }
     const shown = HOST === '0.0.0.0' || HOST === '::' ? '127.0.0.1' : HOST;
     const ui = `http://${shown.includes(':') ? `[${shown}]` : shown}:${claim.port}/`;
     console.log(`[downloadX] Already running at ${ui}`);

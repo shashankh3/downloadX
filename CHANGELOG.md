@@ -6,6 +6,46 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [1.4.0] - 2026-10-22
 
+### Fixed
+- **A segmented download no longer re-fetches the same range over and over.**
+  Node can emit several `data` events in one tick, so the byte counter was
+  updated by concurrent handlers. Every download ended in a "short read" and
+  retried the range: a single 6 MB file issued **2779** range requests before
+  it finished. The chunks are now handled one after another — the same file
+  now takes **63** requests and no short reads at all.
+- **A transfer that ends without progress no longer loops forever.** A short
+  read that delivered nothing is now counted as an error instead of being
+  retried indefinitely.
+- **An HLS playlist that changes its init section mid-way is assembled
+  correctly.** The init section is now written right before the part that needs
+  it instead of once in front of the file.
+- Removing a download from the list no longer deletes its partial data unless
+  the caller asks for it, and the orphaned DASH audio part is cleaned up.
+- Launching downloadX while the first instance is still starting now says
+  "already starting" instead of failing with an error.
+
+### Added
+- A dedicated keep-alive agent with a bounded socket pool, so the range
+  requests of a file reuse their connections.
+- The browser origin allowlist can now be pinned with `DLX_EXTENSION_IDS` or
+  `extension.allowedIds`.
+- `npm run build:extension` prepares the Chrome and Firefox packages.
+- `docs/ARCHITECTURE.md` and `docs/API.md` describe the code and the whole
+  REST surface.
+- The linter learned real static rules: no `var`, no loose equality, no
+  `require()` inside a function, and warnings for oversized files.
+- 134 new checks: unit tests for the small modules, a DOM-shim test for the
+  web UI, engine tests for the queue, the history and the live feed, an FTP
+  test for a data connection that dies, and tests for the origin rules.
+
+### Changed
+- `lib/download.js` was split into `lib/download.js`, `lib/transfer.js` and
+  `lib/stream.js`; `public/js/list.mjs` into `rows.mjs`, `details.mjs`,
+  `segments.mjs` and `filter.mjs`. The moved code is byte-identical.
+- The live feed sends far less data: segment tables are only sent for the
+  working set, unchanged downloads are not rebuilt, and the UI only rewrites
+  the rows that actually changed.
+
 ### Added
 - **Global connection budget** (`maxConnections`, default 64, `0` = unlimited). Every
   socket — probes, segments, playlist parts — passes through one semaphore, so several

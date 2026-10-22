@@ -102,7 +102,24 @@ Keyboard shortcuts: `Ctrl+F` search, `Ctrl+N` new download, `Ctrl+K` focus the l
 | `DLX_OPEN` | unset | Set to `1` to open the UI in your browser once the server is listening |
 | `DLX_EXT_DIR` | `./extension` | Folder served at `/ext/updates.xml` and `/ext/downloadx.crx` |
 | `DLX_EXT_CONFIG` | `./installer/config.json` | Extension mode / store IDs for the in-app install button |
+| `DLX_EXTENSION_IDS` | unset | Comma separated browser-extension ids that may call the API |
 | `DLX_NO_OPEN` | unset | Set to `1` to stop the server from launching Explorer/browsers |
+
+### Which pages may reach the API
+
+The server is local-only, so the only interesting question is what a page in
+your browser may do with it:
+
+- **loopback origins** (the UI itself) are always allowed;
+- **browser-extension origins** are allowed, because the downloadX connector
+  needs them;
+- **everything else** is rejected.
+
+If you want to pin the connector to one id, set `DLX_EXTENSION_IDS` or list it
+in `installer/config.json` under `extension.allowedIds`. Without a list every
+extension origin is accepted, because an extension loaded unpacked gets an id
+that depends on the folder it lives in and therefore cannot be pinned ahead of
+time.
 
 ## Browser extension (Chrome / Edge / Brave / Firefox)
 
@@ -178,6 +195,9 @@ Invalid patterns are reported instead of silently producing wrong URLs; expansio
 capped at 1000 URLs per request.
 
 ## REST API (everything the UI does)
+
+The complete reference lives in **[docs/API.md](docs/API.md)**. The most used
+calls:
 
 ```bash
 # add a download (16 connections, referer for hotlink-protected sites)
@@ -321,6 +341,8 @@ The server is local-only and hardened against drive-by attacks from websites:
 
 ```
 server.js          HTTP API + SSE + static UI (no dependencies)
+docs/ARCHITECTURE.md   how the code is put together
+docs/API.md            the complete REST reference
 lib/engine.js      queue, scheduling, persistence, connection budget
 lib/download.js    one download: probe → segment → transfer → verify → finalize
 lib/httpget.js     redirect-following range-aware HTTP client (proxy, Basic/Digest)

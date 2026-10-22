@@ -1,0 +1,220 @@
+# Autonomous Execution Log
+Started: 2026-10-21T21:10:00Z
+Branch: overnight-auto-improve
+Base commit: 5efc3a3 (origin/main)
+
+## Environment
+- Package manager: npm (no runtime dependencies; devDeps only for the EXE build)
+- Lint: `npm run lint` -> node scripts/lint.mjs
+- Typecheck: n/a (plain JS) - `node --check` runs inside the linter for every file
+- Tests: `npm test` (self-test, api, net, streams, ftp, extension, ui)
+- Full suite: `npm run test:all` (adds installer, integration, local)
+
+## Log
+
+### 2026-10-21T21:35:00Z — [Track A] serialise `_pump()` chunk handling
+- Files: `lib/download.js`, `test/self-test.mjs`
+- Problem: Node's `Readable.read()` can emit several `data` events in one tick.
+  `_pump()` handled them with concurrent async handlers, so the byte counter
+  (`pos`) was updated from several places at once. Every segmented download
+  ended in a "short read" and retried the range — 2779 range requests for a
+  single 6 MB file.
+- Fix: chunks are pushed through a promise chain and handled one at a time; the
+  terminal events (`end` / `error` / `aborted` / `close`) wait for the chain.
+- Verification: `npm run lint` clean; `npm test` -> 95/95, 66/66, 33/33, 33/33,
+  46/46, 87/87, 28/28. Range requests for the self-test download: 2779 -> 63,
+  short reads: hundreds -> 0.
+
+### 2026-10-21T21:45:00Z — [Track A] explicit file deletion on remove
+- Files: `lib/download.js`, `lib/engine.js`, `public/js/list.mjs`, `test/self-test.mjs`
+- Problem: `engine.remove(id, deleteFiles)` stopped the transfer through
+  `cancel()`, which deleted the `.dxpart` file even when the caller did not ask
+  for it. The DASH audio part (`.audio.m4a`) was never deleted at all, so every
+  removed DASH download left an orphaned file behind.
+- Fix: `cancel({ keepFiles })` can now keep the partial data; `remove()` only
+  deletes files when `deleteFiles` is set and always removes the audio part
+  too. The UI asks for `?file=1` where its dialog promises to delete data.
+- Verification: `npm run lint` clean; `npm test` -> 99/99, 66/66, 33/33, 33/33,
+  46/46, 87/87, 28/28 (4 new removal-semantics checks).
+
+### 2026-10-21T22:00:00Z — [Track B] unit tests for the small modules
+- Files: `test/units.test.mjs` (new), `lib/protocol.js`, `lib/instance.js`,
+  `server.js`, `package.json`, `.github/workflows/ci.yml`
+- Coverage added: pattern groups (negative, step, padding, malformed), instance
+  lock (stale reclaim, second claim, port file), protocol URI parsing, token
+  bucket rate changes, atomic store writes, category detection, util helpers.
+- `lib/protocol.js` had no exports and ran on import, so it could not be
+  tested. It now exports `parseCommand()` and only auto-runs when it is the
+  entry point.
+- Bonus fix found by the new tests: a second launch while the first instance was
+  still starting threw "Another downloadX instance is starting..." instead of
+  reporting that downloadX is already running. The lock now returns
+  `{ acquired: false, starting: true }` and the server prints a friendly note.
+- Verification: `npm run lint` clean; `npm test` -> 99/99, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-21T22:20:00Z — [Track C] static rules in the linter
+- Files: `scripts/lint.mjs`
+- Added: no `var`, no loose equality (except against `null`), no `require()`
+  inside a function body, plus warnings for oversized files and functions.
+- To keep the rules accurate the scanner strips comments, string literals,
+  template literals and regular expressions first, and tracks function scopes
+  separately from plain blocks (so `try { ... }` and object literals are not
+  mistaken for function bodies).
+- Verification: `npm run lint` clean (1 advisory: `lib/download.js` is long —
+  that is the next refactoring task); `npm test` -> 99/99, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-21T22:35:00Z — [Track D] less work per live frame
+- Files: `lib/engine.js`, `public/js/list.mjs`
+- The engine serialised a segment table for every download in the history on
+  every live frame (up to 2000 items x 64 segments). Segment tables are now
+  only kept for the working set — active, paused and queued downloads plus the
+  most recent entries — and older ones are marked `segmentsOmitted`.
+- The UI re-wrote every row on every frame even when nothing had changed. Rows
+  now carry a signature and are only touched when their data actually differs.
+- Verification: `npm run lint` clean; `npm test` -> 99/99, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-21T22:50:00Z — [Track D] keep-alive agent
+- Files: `lib/agents.js` (new), `lib/httpget.js`, `lib/download.js`, `server.js`,
+  `test/self-test.mjs`
+- Range requests are the common case, so the connections are worth keeping.
+  A dedicated agent with a bounded socket pool (64 sockets, 16 idle) is used
+  instead of the process-wide global agent, and the agents are closed on
+  shutdown.
+- The probe used to destroy its response, which killed the socket. It now
+  drains the one-byte body so the connection can be reused.
+- The connection-limit test counted a request as busy until its socket closed;
+  with keep-alive that measured the wrong thing, so it now counts until the
+  response is finished and ignores the one-byte probe.
+- Verification: `npm run lint` clean; `npm test` -> 99/99, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28 (3 consecutive self-test runs green).
+
+### 2026-10-21T23:15:00Z — [Track E] split lib/download.js
+- Files: `lib/transfer.js` (new), `lib/stream.js` (new), `lib/download.js`,
+  `lib/naming.js`, `lib/engine.js`
+- lib/download.js was 1202 lines and mixed three concerns. The HTTP range
+  transfer (probe, connection slots, byte pump) moved to lib/transfer.js, the
+  HLS/DASH capture to lib/stream.js, and the header sanitiser to lib/naming.js.
+  The mixin methods are copied onto the prototype with their original
+  descriptors, so they behave exactly like the methods defined in the class.
+- The method bodies were moved with a script, not by hand: a verification pass
+  confirmed that all 15 moved methods are byte-identical to the original.
+- Sizes: download.js 1202 -> 705, transfer.js 325, stream.js 205.
+- Verification: `npm run lint` clean (no size warning left); `npm test` ->
+  99/99, 62/62, 66/66, 33/33, 33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-21T23:30:00Z — [Track B] engine tests for the queue and the history
+- Files: `test/self-test.mjs`
+- Added 7 checks: the higher priority item starts first, the download history
+  is capped at 2000 entries (the newest are kept), and
+  `clearFinished(deleteFiles=true)` really deletes the files.
+- Verification: `npm run lint` clean; `npm test` -> 106/106, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-22T00:00:00Z — [Track E] split the web UI modules
+- Files: `public/js/list.mjs`, `public/js/rows.mjs` (new),
+  `public/js/details.mjs` (new), `public/js/segments.mjs` (new),
+  `public/js/filter.mjs` (new)
+- public/js/list.mjs was 457 lines and mixed filtering, the header, the rows,
+  the segment bars and the details panel. The rows, the details panel, the
+  segment bars and the filter are now separate modules; every UI module is
+  under 200 lines.
+- The filter moved to its own module so the rows and the list can both use it
+  without an import cycle.
+- Verification: `npm run lint` clean; `npm test` -> 106/106, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28; a headless Chrome run loads all 13 modules
+  without a console error.
+
+### 2026-10-22T00:20:00Z — [Track D] cheaper engine tick and cached snapshots
+- Files: `lib/engine.js`, `server.js`, `test/self-test.mjs`
+- The tick measured the speed of every download in the history, although only
+  live transfers have a speed.
+- Snapshots of unchanged downloads are now cached, so the live feed does not
+  rebuild the whole history on every frame. Because the snapshots are shared,
+  the server now replaces entries with copies instead of trimming them in
+  place.
+- Added 5 checks: the live feed stays small with 500 entries, old entries omit
+  the segment table, recent ones keep it, and unchanged entries are reused.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 62/62, 66/66, 33/33,
+  33/33, 46/46, 87/87, 28/28.
+
+### 2026-10-22T00:40:00Z — [Track A] an init section change mid-playlist
+- Files: `lib/stream.js`, `test/streams.test.mjs`
+- An HLS playlist may switch its initialisation section (a new EXT-X-MAP) in
+  the middle. The task builder only ever emitted one init section - the last
+  one in the playlist - and put it in front of every part, so such a stream
+  was assembled incorrectly.
+- The init section is now emitted right before the first part that needs it.
+  DASH keeps one init section per representation, which the same rule
+  produces.
+- Added 2 checks: the init section ends up between the two parts, and the
+  ordinary fMP4 and DASH cases are unchanged.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 62/62, 66/66, 33/33,
+  35/35, 46/46, 87/87, 28/28.
+
+### 2026-10-22T01:00:00Z — [Track A] the browser origin allowlist
+- Files: `lib/origin.js` (new), `server.js`, `installer/config.json`,
+  `test/units.test.mjs`, `README.md`
+- The origin check lived inside server.js and could not be tested. It now
+  lives in lib/origin.js and the extension ids it accepts can be pinned with
+  `DLX_EXTENSION_IDS` or `extension.allowedIds` in installer/config.json.
+- Pinning is opt-in on purpose: an extension loaded unpacked gets an id that
+  depends on the folder it lives in, so it cannot be pinned ahead of time and
+  would break.
+- Added 11 checks for the origin rules.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 73/73, 66/66, 33/33,
+  35/35, 46/46, 87/87, 28/28.
+
+### 2026-10-22T01:25:00Z — [Track B] a short read without progress
+- Files: `lib/download.js`, `test/ftp.test.mjs`
+- The new test (an FTP server that accepts the transfer but never delivers a
+  byte) found that a short read which made no progress was retried forever:
+  the retry path did not count towards the error budget.
+- A short read that delivered something is still just a connection that closed
+  early and the segment continues. A short read without any progress now
+  counts as an error, so the download fails cleanly instead of looping.
+- Added 3 checks.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 73/73, 66/66, 33/33,
+  35/35, 49/49, 87/87, 28/28.
+
+### 2026-10-22T01:40:00Z — [Track F] the REST reference
+- Files: `docs/API.md` (new), `README.md`
+- The API was only documented as a list of curl commands in the README. There
+  is now a complete reference: every endpoint, the body and the answer of
+  every action, the settings with their defaults and limits, and the status
+  codes.
+- Verification: `npm run lint` clean; `npm test` unchanged and green.
+
+### 2026-10-22T02:00:00Z — [Track F] types, the extension build and a flaky test
+- Files: `lib/*.js`, `package.json`, `test/self-test.mjs`
+- The exported helpers, the `Engine` and `Download` classes and the mixin
+  methods now carry JSDoc parameter and return types.
+- `npm run build:extension` prepares the Chrome and Firefox packages from the
+  sources in `extension/`.
+- The schedule test used a window from `:00` to `:59` of the current hour and
+  therefore failed in the last minute of every hour. It now uses a window
+  around the current minute.
+- Verification: `npm run lint` clean; `npm test` -> 111/111, 73/73, 66/66, 33/33,
+  35/35, 49/49, 87/87, 28/28.
+
+### 2026-10-22T02:20:00Z - [Track A] the FTP control channel parser
+- Files: `lib/ftp.js`, `test/units.test.mjs`
+- The reply parser was not reachable from a test because `Control` was private.
+  It is exported now and covered by 5 checks: single line replies, multi line
+  replies, a reply split over two packets and a stray line in front of a
+  reply. The parser itself turned out to be correct.
+- Added a `jsconfig.json` so editors resolve the modules and libraries
+  correctly.
+- Verification: `npm run lint` clean; `npm run test:all` -> 111/111, 78/78,
+  66/66, 33/33, 35/35, 49/49, 87/87, 28/28, 15/15, 6/6, 74/74.
+  The standalone EXE was rebuilt and serves every module.
+
+## Summary
+
+14 atomic commits on `overnight-auto-improve`. The test suite grew from
+448 to 582 checks. Two files that were too big were split (lib/download.js
+1202 -> 705 lines, public/js/list.mjs 457 -> 167 lines) and the linter learned
+real static rules. The bugs that were found and fixed are listed in the
+[CHANGELOG](CHANGELOG.md).

@@ -73,7 +73,178 @@ for (const file of jsFiles) {
   }
 }
 
-/* ---------------- 4. no unused imports ---------------- */
+/* ---------------- 4. static style rules ---------------- */
+
+/** Remove comments and string/template literals so token scans stay accurate. */
+function stripLiterals(src) {
+  let out = '';
+  let i = 0;
+  const n = src.length;
+  const keepNewlines = (text) => text.replace(/[^\n]/g, ' ');
+  while (i < n) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (c === '/' && next === '/') {
+      const end = src.indexOf('\n', i);
+      const stop = end === -1 ? n : end;
+      out += keepNewlines(src.slice(i, stop));
+      i = stop;
+      continue;
+    }
+    if (c === '/' && next === '*') {
+      const end = src.indexOf('*/', i + 2);
+      const stop = end === -1 ? n : end + 2;
+      out += keepNewlines(src.slice(i, stop));
+      i = stop;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') {
+      const quote = c;
+      const start = i;
+      i++;
+      while (i < n) {
+        if (src[i] === '\\') { i += 2; continue; }
+        if (src[i] === quote) { i++; break; }
+        if (quote === '`' && src[i] === '$' && src[i + 1] === '{') {
+          // Keep template expressions: they contain real code.
+          let depth = 1;
+          i += 2;
+          while (i < n && depth > 0) {
+            if (src[i] === '{') depth++;
+            else if (src[i] === '}') depth--;
+            i++;
+          }
+          continue;
+        }
+        i++;
+      }
+      const literal = src.slice(start, i);
+      out += keepNewlines(literal).slice(0, -1) + '"';
+      continue;
+    }
+    if (c === '/' && !isRegexStart(out)) {
+      // division operator - keep as is
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === '/' && isRegexStart(out)) {
+      // regular expression literal
+      const start = i;
+      i++;
+      let inClass = false;
+      while (i < n) {
+        if (src[i] === '\\') { i += 2; continue; }
+        if (src[i] === '[') inClass = true;
+        else if (src[i] === ']') inClass = false;
+        else if (src[i] === '/' && !inClass) { i++; break; }
+        else if (src[i] === '\n') break;
+        i++;
+      }
+      const literal = src.slice(start, i);
+      out += keepNewlines(literal).slice(0, -1) + 'R';
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out;
+}
+
+/** True when a "/" starts a regular expression rather than a division. */
+function isRegexStart(before) {
+  const trimmed = before.replace(/\s+$/, '');
+  if (!trimmed) return true;
+  const last = trimmed[trimmed.length - 1];
+  return '(,=:[!&|?{};+-*%^~<>'.includes(last);
+}
+
+/**
+ * How many function bodies enclose each offset.
+ * A brace belongs to a function when the code in front of it ends with ")" or
+ * "=>" — that covers function declarations, methods and arrow functions while
+ * leaving plain blocks (try, if, object literals) alone.
+ */
+function functionScopes(code) {
+  const depths = new Int32Array(code.length + 1);
+  const stack = [];
+  let fnDepth = 0;
+  for (let i = 0; i < code.length; i++) {
+    depths[i] = fnDepth;
+    const c = code[i];
+    if (c === '{') {
+      const trimmed = code.slice(Math.max(0, i - 200), i).replace(/\s+$/, '');
+      const isFn = /\)$/.test(trimmed) || /=>$/.test(trimmed);
+      stack.push(isFn);
+      if (isFn) fnDepth++;
+    } else if (c === '}') {
+      const wasFn = stack.pop();
+      if (wasFn) fnDepth--;
+    }
+  }
+  depths[code.length] = fnDepth;
+  return depths;
+}
+
+const warnings = [];
+
+for (const file of jsFiles) {
+  const rel = path.relative(ROOT, file);
+  const src = fs.readFileSync(file, 'utf8');
+  const code = stripLiterals(src);
+
+  // `var` is not used anywhere in this project.
+  const varRe = /(?<![\w$.])var\s/g;
+  let m;
+  while ((m = varRe.exec(code))) {
+    const line = code.slice(0, m.index).split('\n').length;
+    fail(rel, `use const/let instead of "var" (line ${line})`);
+  }
+
+  // Loose equality hides coercion bugs.
+  const eqRe = /(?<![=!<>])(==|!=)(?!=)/g;
+  while ((m = eqRe.exec(code))) {
+    const after = code.slice(m.index, m.index + 12);
+    const before = code.slice(Math.max(0, m.index - 12), m.index);
+    if (/^(==|!=)\s*null\b/.test(after) || /null\s*(==|!=)$/.test(before)) continue;
+    const line = code.slice(0, m.index).split('\n').length;
+    fail(rel, `use ${m[1] === '==' ? '===' : '!=='} instead of "${m[1]}" (line ${line})`);
+  }
+
+  // require() belongs in the module header, not inside a function.
+  const depths = functionScopes(code);
+  const reqRe = /require\s*\(/g;
+  while ((m = reqRe.exec(code))) {
+    if (depths[m.index] > 0) {
+      const line = code.slice(0, m.index).split('\n').length;
+      fail(rel, `require() inside a function body (line ${line})`);
+    }
+  }
+
+  // Size budgets: reported, but they do not fail the run.
+  const isTest = rel.startsWith('test' + path.sep);
+  const lines = src.split(/\r?\n/).length;
+  if (lines > 800) warnings.push(`${rel}: ${lines} lines (consider splitting it)`);
+
+  // Long functions are hard to review. Test files are naturally long, so only
+  // the shipped code is measured.
+  if (!isTest) {
+    const fnRe = /(^|\n)\s*(?:async\s+)?function\s+[A-Za-z_$][\w$]*|^\s*(?:async\s+)?[A-Za-z_$][\w$]*\s*\([^)]*\)\s*\{|^\s*get\s+[A-Za-z_$][\w$]*\s*\(/gm;
+    const starts = [];
+    while ((m = fnRe.exec(code))) starts.push(m.index);
+    for (let i = 0; i < starts.length; i++) {
+      const from = starts[i];
+      const to = i + 1 < starts.length ? starts[i + 1] : code.length;
+      const bodyLines = code.slice(from, to).split('\n').length;
+      if (bodyLines > 120) {
+        const line = code.slice(0, from).split('\n').length;
+        warnings.push(`${rel}: a function of about ${bodyLines} lines starts at line ${line}`);
+      }
+    }
+  }
+}
+
+/* ---------------- 5. no unused imports ---------------- */
 for (const file of jsFiles) {
   const rel = path.relative(ROOT, file);
   const src = fs.readFileSync(file, 'utf8');
@@ -106,7 +277,8 @@ for (const file of jsFiles) {
   }
 }
 
-/* ---------------- 5. version consistency ---------------- */{
+/* ---------------- 6. version consistency ---------------- */
+{
   const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const manifest = JSON.parse(fs.readFileSync(path.join(ROOT, 'extension', 'manifest.json'), 'utf8'));
   if (manifest.version !== pkg.version) {
@@ -119,7 +291,7 @@ for (const file of jsFiles) {
   notes.push(`version ${pkg.version} is consistent across package.json, lock file and extension`);
 }
 
-/* ---------------- 5. UI entry points exist ---------------- */
+/* ---------------- 7. UI entry points exist ---------------- */
 {
   const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
   const scripts = [...html.matchAll(/<script[^>]*src="([^"]+)"/g)].map((m) => m[1]);
@@ -136,7 +308,7 @@ for (const file of jsFiles) {
   notes.push(`${scripts.length} script and ${styles.length} stylesheet references in index.html resolve`);
 }
 
-/* ---------------- 6. no stray debug files ---------------- */
+/* ---------------- 8. no stray debug files ---------------- */
 for (const file of allFiles) {
   const rel = path.relative(ROOT, file);
   if (/\.(orig|rej|bak|tmp)$/i.test(rel)) fail(rel, 'stray backup file');
@@ -145,6 +317,10 @@ for (const file of allFiles) {
 
 /* ---------------- report ---------------- */
 for (const n of notes) console.log('  ' + n);
+if (warnings.length) {
+  console.log(`\n${warnings.length} warning(s):`);
+  for (const w of warnings) console.log('  ! ' + w);
+}
 if (problems.length) {
   console.error(`\n${problems.length} problem(s) found:`);
   for (const p of problems) console.error('  - ' + p);
