@@ -14,13 +14,26 @@
     skipExts: [],
   };
 
+  /*
+   * Firefox exposes the promise based "browser.*" API, Chrome the callback
+   * based "chrome.*" API. Firefox treats a second argument as the options
+   * object, so a callback must not be passed there.
+   */
+  const promiseStyle = !!globalThis.browser && !globalThis.chrome;
+
   function call(fn, arg) {
     return new Promise((resolve) => {
       let done = false;
       const finish = (v) => { if (!done) { done = true; resolve(v || {}); } };
       try {
-        const r = fn.call(api.storage.local, arg, (v) => finish(v));
-        if (r && typeof r.then === 'function') r.then(finish, () => finish({}));
+        if (promiseStyle) {
+          const r = fn.call(api.storage.local, arg);
+          if (r && typeof r.then === 'function') r.then(finish, () => finish({}));
+          else finish({});
+        } else {
+          const r = fn.call(api.storage.local, arg, (v) => finish(v));
+          if (r && typeof r.then === 'function') r.then(finish, () => finish({}));
+        }
       } catch { finish({}); }
     });
   }

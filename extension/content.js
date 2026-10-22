@@ -12,14 +12,25 @@
   window.__dlxContent = true;
   const api = globalThis.browser || globalThis.chrome;
   if (!api || !api.runtime || typeof api.runtime.sendMessage !== 'function') return;
+  /*
+   * Firefox exposes the promise based "browser.*" API, Chrome the callback
+   * based "chrome.*" API. Firefox treats a second argument as the options
+   * object, so passing a callback there would silently break every message.
+   */
+  const promiseStyle = !!globalThis.browser && !globalThis.chrome;
 
   function send(msg) {
     return new Promise((resolve) => {
       let done = false;
       const finish = (v) => { if (!done) { done = true; resolve(v || null); } };
       try {
-        const r = api.runtime.sendMessage(msg, (resp) => finish(resp));
-        if (r && typeof r.then === 'function') r.then(finish, () => finish(null));
+        if (promiseStyle) {
+          const r = api.runtime.sendMessage(msg);
+          if (r && typeof r.then === 'function') r.then(finish, () => finish(null));
+          else finish(null);
+        } else {
+          api.runtime.sendMessage(msg, (resp) => finish(resp));
+        }
       } catch { finish(null); }
     });
   }
@@ -160,7 +171,7 @@
     listEl.hidden = false;
     if (open) {
       renderList();
-      const first = listEl.querySelector('button, .dlx-host');
+      const first = listEl.querySelector('button');
       if (first) first.focus();
     }
     toggleBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -252,7 +263,11 @@
   function offerUrl(raw) {
     if (!settings.clipboardWatch || !chip) return;
     const text = String(raw || '').trim();
-    if (!/^(https?|ftps?):\/\/[^\s]+$/i.test(text)) return;
+    if (!/^(https?|ftps?):\/\/[^\s]+$/i.test(text)) {
+      // Something else was copied or pasted: the old offer is stale.
+      if (!chip.hidden) hideChip();
+      return;
+    }
     if (text === pendingClipboard && !chip.hidden) return;
     pendingClipboard = text;
     chip.hidden = false;
@@ -280,10 +295,14 @@
     }
   }
 
-  function onCopy() {
-    setTimeout(() => {
-      try { offerUrl(window.getSelection ? String(window.getSelection()) : ''); } catch { /* ignore */ }
-    }, 0);
+  function onCopy(e) {
+    // The copied text lives in the event, not in the selection: a user can
+    // copy from the address bar or a context menu.
+    try {
+      const dt = e && e.clipboardData;
+      if (dt) offerUrl(dt.getData('text'));
+      else offerUrl(window.getSelection ? String(window.getSelection()) : '');
+    } catch { /* ignore */ }
   }
 
   function onPaste(e) {
