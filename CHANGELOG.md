@@ -4,7 +4,7 @@ All notable changes to downloadX are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.4.0] - 2026-10-22
 
 ### Fixed
 - **A segmented download no longer re-fetches the same range over and over.**
@@ -45,8 +45,6 @@ project uses [semantic versioning](https://semver.org/).
 - The live feed sends far less data: segment tables are only sent for the
   working set, unchanged downloads are not rebuilt, and the UI only rewrites
   the rows that actually changed.
-
-## [1.4.0] - 2026-10-22
 
 ### Added
 - **Global connection budget** (`maxConnections`, default 64, `0` = unlimited). Every
