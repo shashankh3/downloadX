@@ -11,6 +11,9 @@ project uses [semantic versioning](https://semver.org/).
   and Chocolatey manifests was taken from an older build, so every install
   would have failed the checksum verification. `npm run check:release` now
   catches this.
+- **The packaging manifests can now only be used from a public repository.**
+  `winget` and Chocolatey download the EXE anonymously, which answers `404`
+  for a release in a private repository. The README now says so.
 - **A segmented download no longer re-fetches the same range over and over.**
   Node can emit several `data` events in one tick, so the byte counter was
   updated by concurrent handlers. Every download ended in a "short read" and

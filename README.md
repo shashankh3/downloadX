@@ -411,6 +411,12 @@ silently break an install. It also checks that the version is the same in
 `package.json`, the lock file, the extension manifest and the packaging
 files.
 
+> **The release asset must be publicly downloadable.** `winget` and
+> Chocolatey fetch the `InstallerUrl` anonymously, so a release in a **private**
+> repository answers `404` and the install fails. Make the repository public
+> (or host the EXE somewhere publicly reachable and point the manifests
+> there) before submitting the manifests to winget-pkgs.
+
 CI runs the full matrix (Windows + Linux, Node 18/20/22/24) on every push and PR.
 
 ## Notes
