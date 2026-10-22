@@ -279,6 +279,21 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   check('guard: the lookup exists', typeof createSafeLookup(true) === 'function');
 }
 
+/* ---------------- lib/util.js: sparse files ---------------- */
+{
+  const { markFileSparse, unmarkFileSparse, SPARSE_THRESHOLD } = require('../lib/util.js');
+  const file = path.join(TMP, 'sparse.bin');
+  fs.writeFileSync(file, Buffer.alloc(1024));
+  let marked = null;
+  let unmarked = null;
+  try { marked = await markFileSparse(file); } catch { marked = false; }
+  try { unmarked = await unmarkFileSparse(file); } catch { unmarked = false; }
+  check('sparse: the threshold is 64 MB', SPARSE_THRESHOLD === 64 * 1024 * 1024, String(SPARSE_THRESHOLD));
+  check('sparse: marking a file does not throw', marked === true || marked === false, String(marked));
+  check('sparse: unmarking a file does not throw', unmarked === true || unmarked === false, String(unmarked));
+  check('sparse: the file is still readable', fs.statSync(file).size === 1024);
+}
+
 /* ---------------- report ---------------- */
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

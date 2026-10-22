@@ -26,3 +26,7 @@ coverage/
 
 # standalone executable builds
 dist/
+
+# stray test artefacts
+Userssonali*
+*.dxjournal
