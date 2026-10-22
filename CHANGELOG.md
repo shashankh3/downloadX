@@ -26,6 +26,17 @@ project uses [semantic versioning](https://semver.org/).
 ## [1.4.0] - 2026-10-22
 
 ### Fixed
+- **The browser extension was broken in Firefox.** Firefox exposes the promise
+  based `browser.*` API and treats a second argument as the options object, so
+  the callback the content script passed was never called: the floating button
+  never appeared, the media list stayed empty and the clipboard chip never
+  worked. The content script and the options page now use the promise API when
+  it is available.
+- **The clipboard chip offered the wrong link.** It read the text selection
+  instead of the text that was actually copied, so copying from the address bar
+  or a context menu offered nothing. It now uses the clipboard event, and a
+  copied text that is no link hides the stale offer.
+- The focus of the media panel moved to a label instead of the first button.
 - **The packaging manifests pointed at a stale EXE.** The SHA-256 in the winget
   and Chocolatey manifests was taken from an older build, so every install
   would have failed the checksum verification. `npm run check:release` now
