@@ -114,6 +114,7 @@ export function openSettings() {
   $('#set-organize').checked = !!s.organizeByCategory;
   $('#set-invalid-tls').checked = !!s.allowInvalidTls;
   $('#set-update-url').value = s.updateUrl || '';
+  $('#set-webhook').value = s.webhookUrl || '';
   $('#set-sched-enabled').checked = !!s.scheduleEnabled;
   $('#set-sched-from').value = s.scheduleFrom || '23:00';
   $('#set-sched-to').value = s.scheduleTo || '07:00';
@@ -152,6 +153,7 @@ export function initSettingsDialog() {
       organizeByCategory: $('#set-organize').checked,
       allowInvalidTls: $('#set-invalid-tls').checked,
       updateUrl: $('#set-update-url').value.trim(),
+      webhookUrl: $('#set-webhook').value.trim(),
       scheduleEnabled: $('#set-sched-enabled').checked,
       scheduleFrom: $('#set-sched-from').value,
       scheduleTo: $('#set-sched-to').value,

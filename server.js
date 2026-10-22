@@ -544,6 +544,18 @@ async function handleApi(req, res, pathname, query) {
           d.segmentsWanted = Math.max(1, Math.min(64, parseInt(body.value, 10) || d.segmentsWanted));
           engine.saveNow();
           return json(res, 200, d.snapshot());
+        case 'quality': {
+          const index = parseInt(body.index, 10);
+          if (!Number.isInteger(index) || index < 0 || index >= (d.variants || []).length) {
+            return json(res, 400, { error: 'Unknown quality' });
+          }
+          d.variantIndex = index;
+          // Another quality is a different file: throw the old one away.
+          try { fs.unlinkSync(d.finalPath); } catch { /* nothing there */ }
+          await d.restart();
+          engine.saveNow();
+          return json(res, 200, d.snapshot());
+        }
         case 'verify': {
           try {
             const result = await d.verifyChecksum(body.algo || d.checksumAlgo, body.expected || d.expectedChecksum || '');
@@ -576,7 +588,7 @@ async function handleApi(req, res, pathname, query) {
     const body = await readBody(req);
     const allowed = ['rootDir', 'maxConcurrent', 'maxConnections', 'defaultSegments', 'globalSpeedLimit',
       'organizeByCategory', 'scheduleEnabled', 'scheduleFrom', 'scheduleTo', 'shutdownWhenDone', 'proxy',
-      'allowInvalidTls', 'notifications', 'notificationSound', 'updateUrl', 'maxRetries'];
+      'allowInvalidTls', 'notifications', 'notificationSound', 'updateUrl', 'maxRetries', 'webhookUrl'];
     const patch = {};
     for (const k of allowed) if (k in body) patch[k] = body[k];
     engine.settings = normalizeSettings(patch, engine.settings);

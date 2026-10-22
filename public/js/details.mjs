@@ -72,6 +72,30 @@ export function renderDetails(row, it) {
   dl('Integrity', box);
   dl('Limit', limitBox);
 
+  /* Quality picker: a stream can offer several resolutions or bitrates. */
+  if (it.variants && it.variants.length > 1) {
+    const qBox = el('div', 'checksum-form');
+    const select = el('select', 'input select');
+    for (const v of it.variants) {
+      const o = el('option', null, v.label || ('Quality ' + (v.index + 1)));
+      o.value = String(v.index);
+      select.appendChild(o);
+    }
+    select.value = String(it.variantIndex >= 0 ? it.variantIndex : 0);
+    const apply = el('button', 'btn ghost', 'Change');
+    apply.onclick = () => {
+      const index = parseInt(select.value, 10);
+      if (index === it.variantIndex) return;
+      apply.disabled = true;
+      api(`/api/downloads/${it.id}/quality`, { method: 'POST', body: { index } })
+        .then(() => toast('Switching quality…', 'ok'))
+        .catch((e) => toast(e.message, 'err'))
+        .finally(() => { apply.disabled = false; });
+    };
+    qBox.append(select, apply);
+    dl('Quality', qBox);
+  }
+
   if (it.checksum) {
     const b = el('span', 'badge ' + (it.checksum.ok ? 'ok' : 'bad'),
       it.checksum.ok ? 'verified ✓' : 'MISMATCH');

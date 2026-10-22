@@ -154,6 +154,7 @@ DELETE /api/downloads/<id>?file=1   # and the files
 | `priority` | `{"value": 10}` | Sets the priority (-100 … 100) |
 | `limit` | `{"kbs": 500}` | Sets the speed limit (0 = none) |
 | `segments` | `{"value": 32}` | Sets the connection count (only while paused) |
+| `quality` | `{"index": 0}` | Picks another quality of a stream (the file is downloaded again) |
 | `verify` | `{"algo": "sha256", "expected": "…"}` | Verifies the checksum now |
 | `open-file` | – | Opens the finished file |
 | `open-folder` | – | Opens the folder in the file manager |
@@ -209,11 +210,33 @@ validated and clamped.
 | `notificationSound` | boolean | true |
 | `updateUrl` | string | none |
 | `maxRetries` | number 1-100 | 12 |
+| `webhookUrl` | string | none |
 
 ```bash
 curl -X PUT $BASE/api/settings -H "Content-Type: application/json" \
   -d '{"maxConnections":32,"maxRetries":20}'
 ```
+
+### The webhook
+
+With `webhookUrl` set, downloadX posts a JSON body when a download finishes
+or fails:
+
+```json
+{
+  "event": "completed",
+  "id": "…",
+  "filename": "movie.mp4",
+  "url": "https://example.com/movie.mp4",
+  "path": "C:\\Users\\you\\Downloads\\movie.mp4",
+  "size": 734003200,
+  "error": "",
+  "at": 1700000000000
+}
+```
+
+`event` is `completed` or `failed`. The call is fire and forget: a broken
+webhook never affects a download.
 
 ### `POST /api/cancel-shutdown`
 

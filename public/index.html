@@ -195,6 +195,8 @@
       <label class="check span2"><input type="checkbox" id="set-invalid-tls"> Allow invalid TLS certificates (not recommended)</label>
       <label class="field span2"><span>Update manifest URL (optional — HTTPS JSON with <code>version</code> and <code>url</code>)</span>
         <input id="set-update-url" class="input" spellcheck="false" placeholder="https://example.com/downloadx-update.json"></label>
+      <label class="field span2"><span>Webhook URL (optional — called when a download finishes or fails)</span>
+        <input id="set-webhook" class="input" spellcheck="false" placeholder="https://example.com/hooks/downloadx"></label>
       <div class="field span2 hint-row">
         <span id="set-freespace">Free space on the download volume: —</span>
         <button class="btn ghost" id="set-refresh-space" type="button">Refresh</button>

@@ -4,6 +4,19 @@ All notable changes to downloadX are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the
 project uses [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Quality selection for HLS and DASH streams.** The available resolutions and
+  bitrates are listed in the API and in the details panel of a download; picking
+  another one downloads that quality instead.
+- **A completion webhook.** Set `webhookUrl` in the settings and downloadX posts
+  a JSON body when a download finishes or fails - handy for batch workflows.
+- **A damaged file is downloaded again.** When the expected checksum does not
+  match, the file is fetched once more automatically before the download is
+  reported as damaged.
+- The HTTP client can send a request body now (the `body` option).
+
 ## [1.4.0] - 2026-10-22
 
 ### Fixed

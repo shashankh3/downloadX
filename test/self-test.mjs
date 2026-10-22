@@ -725,6 +725,85 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   engine.close();
 }
 
+/* ---------------- the completion webhook ---------------- */
+{
+  const hits = [];
+  const hook = await makeServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => { body += c; });
+    req.on('end', () => {
+      hits.push({ method: req.method, body: body, type: req.headers['content-type'] });
+      res.writeHead(200, { 'Content-Length': '2' });
+      res.end('ok');
+    });
+  });
+  const engine = new Engine(path.join(TMP, 'engine27'));
+  engine.settings.rootDir = path.join(TMP, 'files27');
+  engine.settings.webhookUrl = `http://127.0.0.1:${hook.address().port}/hook`;
+  const d = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 2, filename: 'hooked.bin' });
+  await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 60000);
+  await sleep(600);
+  check('webhook: the download completed', d.status === 'completed', d.error);
+  check('webhook: the hook was called', hits.length === 1, `${hits.length} calls`);
+  if (hits.length) {
+    check('webhook: it is a POST with JSON', hits[0].method === 'POST' && /json/.test(hits[0].type || ''), hits[0].method + ' ' + hits[0].type);
+    let payload = null;
+    try { payload = JSON.parse(hits[0].body); } catch { payload = null; }
+    check('webhook: the payload names the file', !!payload && payload.event === 'completed' && payload.filename === 'hooked.bin', JSON.stringify(payload));
+    check('webhook: the payload has the size', !!payload && payload.size === d.total, JSON.stringify(payload && payload.size));
+  }
+  engine.close();
+  hook.close();
+}
+
+/* ---------------- a damaged file is downloaded again ---------------- */
+{
+  let served = 0;
+  // Same size, different bytes: the first transfer is damaged, the second is
+  // correct (a different size would change the total and the retry).
+  const broken = crypto.randomBytes(BLOB.length);
+  const srvR = await makeServer((req, res) => {
+    const isProbe = req.headers.range === 'bytes=0-0';
+    if (!isProbe) served++;
+    const buf = served <= 1 ? broken : BLOB;
+    const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
+    let start = 0, end = buf.length - 1;
+    if (m) {
+      start = parseInt(m[1], 10);
+      if (m[2]) end = Math.min(parseInt(m[2], 10), buf.length - 1);
+      res.writeHead(206, {
+        'Content-Length': String(end - start + 1),
+        'Content-Range': `bytes ${start}-${end}/${buf.length}`,
+        'Accept-Ranges': 'bytes',
+      });
+      return res.end(buf.subarray(start, end + 1));
+    }
+    res.writeHead(200, { 'Content-Length': String(buf.length), 'Accept-Ranges': 'bytes' });
+    res.end(buf);
+  });
+  const engine = new Engine(path.join(TMP, 'engine28'));
+  engine.settings.rootDir = path.join(TMP, 'files28');
+  const d = engine.add({
+    urls: [`http://127.0.0.1:${srvR.address().port}/file.bin`],
+    segments: 1,
+    filename: 'repaired.bin',
+    expectedChecksum: BLOB_HASH,
+  });
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 90000);
+  check('repair: the download still completes', done.status === 'completed', done.error);
+  check('repair: the file was fetched twice', served >= 2, `${served} requests`);
+  if (done.finalPath && fs.existsSync(done.finalPath)) {
+    check('repair: the repaired file matches the hash', (await hashFile(done.finalPath)) === BLOB_HASH);
+  } else {
+    let listing = [];
+    try { listing = fs.readdirSync(done.destDir); } catch { /* none */ }
+    check('repair: the repaired file matches the hash', false,
+      `path=${done.finalPath} name=${done.filename} error=${done.error} dir=${listing.join(',')}`);
+  }
+  engine.close();
+  srvR.close();
+}
+
 srv.close();
 
 const failed = results.filter((r) => !r.ok);

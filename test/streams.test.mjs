@@ -299,6 +299,28 @@ function startServer(routes) {
   check('hls: segment count in snapshot', d.snapshot().total === 5 && d.snapshot().received === 5, `${d.snapshot().received}/${d.snapshot().total}`);
   check('hls: picks highest bandwidth variant', fs.readFileSync(d.finalPath).equals(Buffer.concat(highSegs)));
   check('hls: category is Video', d.snapshot().category === 'Video');
+  const variants = d.snapshot().variants || [];
+  check('hls: the available qualities are listed', variants.length === 2, JSON.stringify(variants.map((v) => v.bandwidth)));
+  check('hls: the best quality comes first', variants[0] && variants[0].bandwidth === 500000, JSON.stringify(variants[0]));
+  check('hls: a quality has a readable label', variants[0] && /1920x1080/.test(variants[0].label), variants[0] && variants[0].label);
+  engine.close();
+  srv.server.close();
+}
+
+/* ---------------- switching the quality ---------------- */
+{
+  const srv = await startServer(buildRoutes());
+  const engine = makeEngine();
+  const d = await runDownload(engine, `http://127.0.0.1:${srv.port}/master.m3u8`);
+  check('hls: the first quality is downloaded', fs.readFileSync(d.finalPath).equals(Buffer.concat(highSegs)));
+  // Pick the other quality, exactly like the API does.
+  d.variantIndex = 1;
+  try { fs.unlinkSync(d.finalPath); } catch { /* none */ }
+  await d.restart();
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 60000);
+  check('hls: the chosen quality is downloaded', done.status === 'completed', done.error);
+  check('hls: the lower quality has its own content',
+    fs.readFileSync(done.finalPath).equals(Buffer.concat(lowSegs)));
   engine.close();
   srv.server.close();
 }
