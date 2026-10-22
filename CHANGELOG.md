@@ -49,6 +49,10 @@ project uses [semantic versioning](https://semver.org/).
 - 151 new checks: unit tests for the small modules, a DOM-shim test for the
   web UI, engine tests for the queue, the history and the live feed, an FTP
   test for a data connection that dies, and tests for the origin rules.
+- `test/extension-e2e.test.mjs` runs the **real extension code against the
+  real server** (16 checks): the app is found on a non-default port, a
+  browser download is grabbed and the file is byte-perfect, the file name and
+  the context menu work, and a download is never lost when the app is down.
 
 ### Changed
 - `lib/download.js` was split into `lib/download.js`, `lib/transfer.js` and
