@@ -5,6 +5,7 @@
  * bars in segments.mjs and the details panel in details.mjs.
  */
 import { $, toast } from './dom.mjs';
+import { t } from './i18n.mjs';
 import { fmtBytes } from './format.mjs';
 import { state, ui, speedHistory, prevStatus } from './store.mjs';
 import { renderList } from './rows.mjs';
@@ -19,11 +20,12 @@ export function updateHeader() {
   while (speedHistory.length && now - speedHistory[0].t > 60000) speedHistory.shift();
   drawSpark();
   const busy = (state.activeCount || 0) > 0;
+  const conns = state.activeConnections || 0;
   $('#st-dot').classList.toggle('busy', busy);
   $('#st-engine').textContent = busy
-    ? `Transferring — ${state.activeConnections || 0} connection${state.activeConnections === 1 ? '' : 's'}`
-    : 'Engine ready';
-  $('#st-conn').textContent = `${state.activeConnections || 0} connection${state.activeConnections === 1 ? '' : 's'}`;
+    ? t('Transferring — {n} connections', { n: conns })
+    : t('Engine ready');
+  $('#st-conn').textContent = conns === 1 ? t('1 connection') : t('{n} connections', { n: conns });
 }
 
 function drawSpark() {
@@ -67,9 +69,9 @@ export function updateCounts() {
     n.textContent = (kind === 'view' ? vc[key] : cc[key]) || 0;
   });
   const shown = filteredItems().length;
-  $('#view-sub').textContent = `${shown} item${shown === 1 ? '' : 's'}`;
-  $('#st-act').textContent = `${state.activeCount || 0} active · ${vc.waiting} waiting`;
-  $('#st-total').textContent = `${vc.completed} completed`;
+  $('#view-sub').textContent = shown === 1 ? t('1 item') : t('{n} items', { n: shown });
+  $('#st-act').textContent = t('{active} active · {waiting} waiting', { active: state.activeCount || 0, waiting: vc.waiting });
+  $('#st-total').textContent = t('{n} completed', { n: vc.completed });
   $('#btn-retry-failed').hidden = vc.failed === 0;
   $('#btn-clear').hidden = (vc.completed + vc.failed) === 0;
 }
@@ -77,7 +79,7 @@ export function updateCounts() {
 export function refreshViewTitle() {
   const cat = ui.cat === 'all' ? '' : ' · ' + ui.cat;
   const label = { all: 'All downloads', downloading: 'Downloading', waiting: 'Waiting', completed: 'Completed', failed: 'Failed' }[ui.view] || 'Downloads';
-  $('#view-title').textContent = label + cat;
+  $('#view-title').textContent = t(label) + cat;
   updateCounts();
 }
 

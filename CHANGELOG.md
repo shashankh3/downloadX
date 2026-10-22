@@ -19,6 +19,9 @@ project uses [semantic versioning](https://semver.org/).
 - **A site grabber.** `POST /api/scrape` finds the download links of a page,
   and the Add dialog has a "Grab links from a page" button that fills the
   list with them.
+- **The interface can be translated.** The language is chosen in the settings
+  and remembered by the browser; English and German ship with the app. The
+  linter reports strings that have no translation yet.
 
 ## [1.4.0] - 2026-10-22
 

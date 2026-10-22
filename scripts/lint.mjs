@@ -315,6 +315,33 @@ for (const file of allFiles) {
   if (/\.dxpart$/i.test(rel)) fail(rel, 'leftover partial download');
 }
 
+/* ---------------- 9. every translatable string has a translation ---------------- */
+{
+  const { LANGS, DICT } = await import('../public/js/i18n.mjs');
+  const keys = new Set();
+  const html = fs.readFileSync(path.join(ROOT, 'public', 'index.html'), 'utf8');
+  for (const m of html.matchAll(/data-i18n(?:-placeholder|-title)?="([^"]+)"/g)) keys.add(m[1]);
+  const uiDir = path.join(ROOT, 'public', 'js');
+  for (const file of fs.readdirSync(uiDir)) {
+    if (!file.endsWith('.mjs')) continue;
+    const src = fs.readFileSync(path.join(uiDir, file), 'utf8');
+    for (const m of src.matchAll(/\bt\('([^']+)'\)/g)) keys.add(m[1]);
+  }
+  for (const code of Object.keys(LANGS)) {
+    if (code === 'en') continue;
+    const table = DICT[code] || {};
+    const missing = [...keys].filter((k) => !(k in table));
+    if (missing.length) {
+      warnings.push(`${code}: ${missing.length} untranslated string(s), for example "${missing[0]}"`);
+    } else {
+      notes.push(`the ${code} translation covers all ${keys.size} strings`);
+    }
+  }
+  for (const key of keys) {
+    if (key.includes('{') && !/^\{[a-z]+\}/.test(key)) continue;
+  }
+}
+
 /* ---------------- report ---------------- */
 for (const n of notes) console.log('  ' + n);
 if (warnings.length) {

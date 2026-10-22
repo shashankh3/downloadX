@@ -376,6 +376,25 @@ check('ui: clearing the search restores the list', filteredItems().length === 2)
   check('ui: index loads the module entry point', /<script type="module" src="\/app\.mjs">/.test(indexSrc));
 }
 
+/* ---------------- the dialogs open without errors ---------------- */
+{
+  const { openSettings, openAdd } = await import('../public/js/dialogs.mjs');
+  const { languages, language, setLanguage, t } = await import('../public/js/i18n.mjs');
+  let opened = null;
+  try { openSettings(); opened = byId.get('dlg-settings').open; } catch (e) { opened = 'error: ' + e.message; }
+  check('ui: the settings dialog opens', opened === true, String(opened));
+  const options = byId.get('set-language').children.length;
+  check('ui: the language list is filled', options >= 2, `${options} languages`);
+  check('ui: the current language is selected', byId.get('set-language').value === language(), byId.get('set-language').value);
+  let added = null;
+  try { openAdd('https://example.com/a.zip'); added = byId.get('dlg-add').open; } catch (e) { added = 'error: ' + e.message; }
+  check('ui: the add dialog opens', added === true, String(added));
+  check('ui: the add dialog is prefilled', byId.get('add-urls').value === 'https://example.com/a.zip', byId.get('add-urls').value);
+  check('ui: the languages are listed', languages().length >= 2, JSON.stringify(languages().map((l) => l.code)));
+  setLanguage('en');
+  check('ui: unknown text falls back to english', t('Nothing here yet') === 'Nothing here yet');
+}
+
 /* ---------------- report ---------------- */
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

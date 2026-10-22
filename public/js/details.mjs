@@ -25,20 +25,20 @@ export function renderDetails(row, it) {
     d.append(dt, dd);
   };
   d.textContent = '';
-  dl('URL', el('span', 'mono', it.url));
-  if (it.urls && it.urls.length > 1) dl('Mirrors', it.urls.slice(1).join(', '));
-  dl('Saved to', el('span', 'mono', it.path));
+  dl(t('URL'), el('span', 'mono', it.url));
+  if (it.urls && it.urls.length > 1) dl(t('Mirrors'), it.urls.slice(1).join(', '));
+  dl(t('Saved to'), el('span', 'mono', it.path));
   if (it.stream) {
-    dl('Media stream', `${it.stream.toUpperCase()} — ${it.received} of ${it.total} parts`);
-    dl('Connections', '1 (sequential stream)');
-    if (it.stream === 'dash') dl('Audio track', el('span', 'mono', it.path.replace(/\.mp4$/i, '.audio.m4a')));
+    dl(t('Media stream'), `${it.stream.toUpperCase()} — ${it.received} of ${it.total} parts`);
+    dl(t('Connections'), '1 (sequential stream)');
+    if (it.stream === 'dash') dl(t('Audio track'), el('span', 'mono', it.path.replace(/\.mp4$/i, '.audio.m4a')));
   } else {
     const segCount = segList.length;
-    dl('Connections', `${it.activeConnections || 0} active / ${segCount} segment${segCount === 1 ? '' : 's'} (max ${it.segmentsWanted})`);
+    dl(t('Connections'), `${it.activeConnections || 0} active / ${segCount} segment${segCount === 1 ? '' : 's'} (max ${it.segmentsWanted})`);
   }
-  dl('Resumable', it.canResume ? 'Yes' : 'No — single stream');
-  if (it.expectedChecksum) dl('Expected hash', el('span', 'mono', it.expectedChecksum));
-  if (it.error) dl('Error', el('span', 'mono', it.error));
+  dl(t('Resumable'), it.canResume ? 'Yes' : 'No — single stream');
+  if (it.expectedChecksum) dl(t('Expected hash'), el('span', 'mono', it.expectedChecksum));
+  if (it.error) dl(t('Error'), el('span', 'mono', it.error));
 
   const limitBox = el('div', 'checksum-form');
   const limitInput = el('input', 'input');
@@ -69,8 +69,8 @@ export function renderDetails(row, it) {
       .finally(() => { btn.disabled = false; btn.textContent = 'Verify'; });
   };
   box.append(algo, hashInput, btn);
-  dl('Integrity', box);
-  dl('Limit', limitBox);
+  dl(t('Integrity'), box);
+  dl(t('Limit'), limitBox);
 
   /* Quality picker: a stream can offer several resolutions or bitrates. */
   if (it.variants && it.variants.length > 1) {
@@ -82,7 +82,7 @@ export function renderDetails(row, it) {
       select.appendChild(o);
     }
     select.value = String(it.variantIndex >= 0 ? it.variantIndex : 0);
-    const apply = el('button', 'btn ghost', 'Change');
+    const apply = el('button', 'btn ghost', t('Change'));
     apply.onclick = () => {
       const index = parseInt(select.value, 10);
       if (index === it.variantIndex) return;
@@ -93,15 +93,15 @@ export function renderDetails(row, it) {
         .finally(() => { apply.disabled = false; });
     };
     qBox.append(select, apply);
-    dl('Quality', qBox);
+    dl(t('Quality'), qBox);
   }
 
   if (it.checksum) {
     const b = el('span', 'badge ' + (it.checksum.ok ? 'ok' : 'bad'),
       it.checksum.ok ? 'verified ✓' : 'MISMATCH');
     const note = el('span', 'mono', `${it.checksum.algo}: ${it.checksum.actual || it.checksum.error || ''}`);
-    dl('Result', [b, note]);
+    dl(t('Result'), [b, note]);
   }
-  dl('Added', fmtDate(it.addedAt));
-  if (it.completedAt) dl('Completed', fmtDate(it.completedAt));
+  dl(t('Added'), fmtDate(it.addedAt));
+  if (it.completedAt) dl(t('Completed'), fmtDate(it.completedAt));
 }

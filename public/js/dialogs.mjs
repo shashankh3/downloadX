@@ -2,10 +2,11 @@
 /*
  * The "New download" and "Settings" dialogs.
  */
-import { $, toast } from './dom.mjs';
+import { $, el, toast } from './dom.mjs';
 import { api } from './api.mjs';
 import { state } from './store.mjs';
 import { fmtBytes } from './format.mjs';
+import { languages, language, setLanguage, t } from './i18n.mjs';
 
 /* ---------------- add dialog ---------------- */
 
@@ -133,6 +134,20 @@ export function initAddDialog() {
 
 export function openSettings() {
   const s = state.settings || {};
+  const langSelect = $('#set-language');
+  if (langSelect) {
+    langSelect.textContent = '';
+    for (const l of languages()) {
+      const o = el('option', null, l.name);
+      o.value = l.code;
+      langSelect.appendChild(o);
+    }
+    langSelect.value = language();
+    langSelect.onchange = () => {
+      setLanguage(langSelect.value);
+      openSettings();
+    };
+  }
   $('#set-root').value = s.rootDir || '';
   $('#set-concurrent').value = s.maxConcurrent ?? 3;
   $('#set-maxconnections').value = s.maxConnections ?? 64;
@@ -161,10 +176,10 @@ export async function refreshFreeSpace() {
   try {
     const r = await api('/api/free-space');
     box.textContent = r.free == null
-      ? 'Free space on the download volume: unknown'
-      : `Free space on the download volume: ${fmtBytes(r.free)}`;
+      ? t('Free space on the download volume: unknown')
+      : t('Free space on the download volume: {size}', { size: fmtBytes(r.free) });
   } catch {
-    box.textContent = 'Free space on the download volume: unknown';
+    box.textContent = t('Free space on the download volume: unknown');
   }
 }
 

@@ -7,6 +7,7 @@ import { $, toast, confirmDlg, setNav, injectIcons } from './dom.mjs';
 import { api, connect } from './api.mjs';
 import { ui } from './store.mjs';
 import { I } from './icons.mjs';
+import { initLanguage, t } from './i18n.mjs';
 import { applySnapshot, renderList, refreshViewTitle, setConfirmDialog } from './list.mjs';
 import { openAdd, initAddDialog, initSettingsDialog } from './dialogs.mjs';
 
@@ -173,6 +174,7 @@ async function checkUpdates() {
 
 /* ---------------- boot ---------------- */
 
+initLanguage();
 injectIcons();
 initAddDialog();
 initSettingsDialog();
@@ -183,7 +185,7 @@ connect({
   onSnapshot: applySnapshot,
   onStatus: (s) => {
     if (s === 'reconnecting') {
-      $('#st-engine').textContent = 'Reconnecting…';
+      $('#st-engine').textContent = t('Reconnecting…');
       $('#st-dot').classList.remove('busy');
     }
   },

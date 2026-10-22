@@ -84,9 +84,11 @@ The UI opens at **http://127.0.0.1:9765**. Files land in your `Downloads` folder
 sorted into `Programs / Compressed / Video / Music / Documents / Images` (configurable).
 
 Paste a URL anywhere on the page (Ctrl+V), or drop a link onto the window, to open the
-Add dialog pre-filled. The interface ships with a clean light theme by default; the
-moon/sun button in the sidebar footer switches to a dark theme with a Driver Booster-style
-navy-and-blue look, and your choice is remembered.
+Add dialog pre-filled. The interface ships in **English and German** — pick the
+language in the settings, it is remembered by the browser. The interface ships with a
+clean light theme by default; the moon/sun button in the sidebar footer switches to a
+dark theme with a Driver Booster-style navy-and-blue look, and your choice is
+remembered.
 
 Keyboard shortcuts: `Ctrl+F` search, `Ctrl+N` new download, `Ctrl+K` focus the list,
 `Enter`/`Space` expand a row, `?` shows the full list, `Esc` closes a dialog.

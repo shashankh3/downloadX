@@ -7,6 +7,7 @@
 import { $, el, toast } from './dom.mjs';
 import { api } from './api.mjs';
 import { I, catTile } from './icons.mjs';
+import { t } from './i18n.mjs';
 import { fmtBytes, fmtSpeed, fmtEta, fmtPercent } from './format.mjs';
 import { state, ui, rowMap, STATUS_LABEL } from './store.mjs';
 import { filteredItems } from './filter.mjs';
@@ -113,7 +114,7 @@ function updateRow(row, it) {
     : it.status === 'failed' ? '!' : (pctVal > 0 ? pctVal.toFixed(pctVal >= 10 ? 0 : 1) + '%' : '');
 
   row.mstat.textContent = '';
-  row.mstat.append(el('span', 'dot ' + it.status), el('span', null, STATUS_LABEL[it.status] || it.status));
+  row.mstat.append(el('span', 'dot ' + it.status), el('span', null, t(STATUS_LABEL[it.status] || it.status)));
 
   if (it.stream) {
     row.msize.textContent = `${it.received} / ${it.total} parts`;
@@ -153,39 +154,39 @@ function renderActions(row, it) {
     row.actions.appendChild(b);
   };
   const act = (a) => api(`/api/downloads/${it.id}/${a}`, { method: 'POST', body: {} }).catch((e) => toast(e.message, 'err'));
-  const copyUrl = () => navigator.clipboard.writeText(it.url).then(() => toast('URL copied', 'ok'), () => {});
+  const copyUrl = () => navigator.clipboard.writeText(it.url).then(() => toast(t('URL copied'), 'ok'), () => {});
   if (['downloading', 'probing', 'queued'].includes(it.status)) {
-    add('pause', 'Pause', () => act('pause'));
-    add('stop', 'Stop & remove', async () => {
-      if (await confirmRemove('Stop download?', `"${it.filename}" will be stopped and its partial data removed.`, 'Stop')) {
+    add('pause', t('Pause'), () => act('pause'));
+    add('stop', t('Stop & remove'), async () => {
+      if (await confirmRemove(t('Stop download?'), `"${it.filename}" will be stopped and its partial data removed.`, 'Stop')) {
         api(`/api/downloads/${it.id}?file=1`, { method: 'DELETE' }).catch((e) => toast(e.message, 'err'));
       }
     }, true);
   } else if (it.status === 'paused') {
-    add('play', 'Resume', () => act('resume'));
-    add('stop', 'Remove', async () => {
-      if (await confirmRemove('Remove download?', `"${it.filename}" and its partial data will be removed.`, 'Remove')) {
+    add('play', t('Resume'), () => act('resume'));
+    add('stop', t('Remove'), async () => {
+      if (await confirmRemove(t('Remove download?'), `"${it.filename}" and its partial data will be removed.`, t('Remove'))) {
         api(`/api/downloads/${it.id}?file=1`, { method: 'DELETE' }).catch((e) => toast(e.message, 'err'));
       }
     }, true);
   } else if (it.status === 'failed' || it.status === 'canceled') {
-    add('retry', 'Retry', () => act('retry'));
-    add('stop', 'Remove from list', () => api(`/api/downloads/${it.id}`, { method: 'DELETE' }).catch((e) => toast(e.message, 'err')), true);
+    add('retry', t('Retry'), () => act('retry'));
+    add('stop', t('Remove from list'), () => api(`/api/downloads/${it.id}`, { method: 'DELETE' }).catch((e) => toast(e.message, 'err')), true);
   } else if (it.status === 'completed') {
-    add('folder', 'Open folder', () => act('open-folder'));
-    add('doc', 'Open file', () => act('open-file'));
-    add('retry', 'Download again', async () => {
-      if (await confirmRemove('Download again?', `"${it.filename}" will be downloaded from scratch and the existing file kept if the name is taken.`, 'Download')) {
+    add('folder', t('Open folder'), () => act('open-folder'));
+    add('doc', t('Open file'), () => act('open-file'));
+    add('retry', t('Download again'), async () => {
+      if (await confirmRemove(t('Download again?'), `"${it.filename}" will be downloaded from scratch and the existing file kept if the name is taken.`, 'Download')) {
         api(`/api/downloads/${it.id}/restart`, { method: 'POST', body: {} }).catch((e) => toast(e.message, 'err'));
       }
     });
-    add('trash', 'Delete file', async () => {
-      if (await confirmRemove('Delete file?', `"${it.filename}" will be permanently deleted from disk.`)) {
-        api(`/api/downloads/${it.id}?file=1`, { method: 'DELETE' }).then(() => toast('Deleted', 'ok'), (e) => toast(e.message, 'err'));
+    add('trash', t('Delete file'), async () => {
+      if (await confirmRemove(t('Delete file?'), `"${it.filename}" will be permanently deleted from disk.`)) {
+        api(`/api/downloads/${it.id}?file=1`, { method: 'DELETE' }).then(() => toast(t('Deleted'), 'ok'), (e) => toast(e.message, 'err'));
       }
     }, true);
   }
-  add('link', 'Copy URL', copyUrl);
+  add('link', t('Copy URL'), copyUrl);
 }
 
 /** Wrapper so the list module can show confirmations without a circular import. */
