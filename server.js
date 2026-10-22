@@ -8,14 +8,14 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
-const { Engine, normalizeSettings } = require('./lib/engine');
-const { expandPatternDetailed } = require('./lib/patterns');
-const { extractLinks } = require('./lib/scrape');
+const { Engine } = require('./lib/engine');
 const { InstanceLock, writePortFile, removePortFile } = require('./lib/instance');
 const httpget = require('./lib/httpget');
 const { createOriginCheck } = require('./lib/origin');
+const { createApiRouter } = require('./lib/http-api');
+const { createStaticHandlers, SECURITY_HEADERS } = require('./lib/http-static');
+const { openPath } = require('./lib/open');
 const { destroyAgents } = require('./lib/agents');
-const { freeSpaceFor } = require('./lib/util');
 const { version: VERSION } = require('./lib/version');
 
 const DEBUG = !!process.env.DLX_DEBUG;
@@ -155,39 +155,42 @@ function extensionFolder() {
 }
 
 let engine = null;
+let apiRouter = null;
 let instanceLock = null;
 let boundPort = 0;
 let shuttingDown = false;
+
+/* The static files (the web UI and the extension package). */
+const staticHandlers = createStaticHandlers({ publicDir: PUBLIC, extDir: EXT_DIR, isPkg: IS_PKG });
 
 function startEngine() {
   engine = new Engine(DATA_DIR);
   engine.on('shutdown-armed', ({ at }) => armShutdown(at));
   engine.on('shutdown-cancelled', () => disarmShutdown());
+  apiRouter = createApiRouter({
+    getEngine: () => engine,
+    instanceId: INSTANCE_ID,
+    version: VERSION,
+    securityHeaders: SECURITY_HEADERS,
+    sseClients,
+    buildSnapshot,
+    checkForUpdate,
+    readLimited,
+    openPath,
+    extension: {
+      mode: EXT_MODE,
+      chromeStoreId: CHROME_STORE_ID,
+      edgeStoreId: EDGE_STORE_ID,
+      firefoxId: FIREFOX_ID,
+      dir: EXT_DIR,
+      folder: extensionFolder,
+    },
+    isAllowedOrigin: originCheck,
+    quit: (code) => shutdown(code),
+  });
 }
 
-const MIME = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.png': 'image/png',
-  '.ico': 'image/x-icon',
-  '.json': 'application/json',
-  '.webmanifest': 'application/manifest+json',
-  '.woff2': 'font/woff2',
-  '.crx': 'application/x-chrome-extension',
-  '.xml': 'text/xml; charset=utf-8',
-};
 
-const SECURITY_HEADERS = {
-  'X-Content-Type-Options': 'nosniff',
-  'X-Frame-Options': 'DENY',
-  'Referrer-Policy': 'no-referrer',
-  'Cross-Origin-Opener-Policy': 'same-origin',
-  'Cross-Origin-Resource-Policy': 'same-origin',
-  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), payment=()',
-};
 
 /* ---------------- shutdown-when-done ---------------- */
 let shutdownTimer = null;
@@ -215,153 +218,8 @@ function disarmShutdown(notify = true) {
 }
 
 /* ---------------- helpers ---------------- */
-function json(res, code, obj) {
-  if (res.writableEnded) return;
-  const body = JSON.stringify(obj);
-  res.writeHead(code, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Content-Length': Buffer.byteLength(body),
-    'Cache-Control': 'no-store',
-    ...SECURITY_HEADERS,
-    ...corsHeaders(res.__origin),
-  });
-  res.end(body);
-}
 
-function isAllowedOrigin(origin) {
-  return originCheck(origin);
-}
 
-function corsHeaders(origin) {
-  if (!origin || !isAllowedOrigin(origin)) return {};
-  return {
-    'Access-Control-Allow-Origin': origin,
-    'Vary': 'Origin',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Private-Network': 'true',
-    'Access-Control-Max-Age': '600',
-  };
-}
-
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    let size = 0;
-    const chunks = [];
-    let done = false;
-    const fail = (err) => {
-      if (done) return;
-      done = true;
-      reject(err);
-      req.resume();
-    };
-    req.on('data', (c) => {
-      if (done) return;
-      size += c.length;
-      if (size > 1024 * 1024) return fail(Object.assign(new Error('Body too large'), { status: 413 }));
-      chunks.push(c);
-    });
-    req.on('end', () => {
-      if (done) return;
-      done = true;
-      if (!chunks.length) return resolve({});
-      try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-      catch { reject(Object.assign(new Error('Invalid JSON body'), { status: 400 })); }
-    });
-    req.on('error', (e) => { if (!done) { done = true; reject(e); } });
-  });
-}
-
-function isPathInside(parent, child) {
-  const rel = path.relative(parent, child);
-  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
-}
-
-function serveStatic(req, res, pathname) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
-    return res.end('Method not allowed');
-  }
-  let rel;
-  try { rel = decodeURIComponent(pathname); } catch { rel = pathname; }
-  if (rel === '/' || rel === '') rel = '/index.html';
-  rel = rel.replace(/\\/g, '/').replace(/\0/g, '');
-  const file = path.normalize(path.join(PUBLIC, rel));
-  if (!isPathInside(PUBLIC, file)) {
-    res.writeHead(403, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
-    return res.end('Forbidden');
-  }
-  fs.stat(file, (err, stat) => {
-    if (err || !stat.isFile()) {
-      res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
-      return res.end('Not found');
-    }
-    const ext = path.extname(file).toLowerCase();
-    const etag = `W/"${stat.size.toString(16)}-${Math.floor(stat.mtimeMs).toString(16)}"`;
-    if (req.headers['if-none-match'] === etag) {
-      res.writeHead(304, { ETag: etag, ...SECURITY_HEADERS });
-      return res.end();
-    }
-    const headers = {
-      'Content-Type': MIME[ext] || 'application/octet-stream',
-      'Content-Length': stat.size,
-      'Cache-Control': 'no-cache',
-      'ETag': etag,
-      'Last-Modified': stat.mtime.toUTCString(),
-      ...SECURITY_HEADERS,
-    };
-    if (ext === '.html') {
-      headers['Content-Security-Policy'] = [
-        "default-src 'self'",
-        "script-src 'self'",
-        "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data:",
-        "connect-src 'self'",
-        "object-src 'none'",
-        "base-uri 'none'",
-        "frame-ancestors 'none'",
-      ].join('; ');
-    }
-    res.writeHead(200, headers);
-    if (req.method === 'HEAD') return res.end();
-    if (IS_PKG) {
-      try { res.end(fs.readFileSync(file)); } catch { try { res.destroy(); } catch { /* gone */ } }
-      return;
-    }
-    const stream = fs.createReadStream(file);
-    stream.on('error', () => { try { res.destroy(); } catch { /* gone */ } });
-    stream.pipe(res);
-  });
-}
-
-function serveExtensionFile(req, res, pathname) {
-  if (req.method !== 'GET' && req.method !== 'HEAD') {
-    res.writeHead(405, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
-    return res.end('Method not allowed');
-  }
-  const isCrx = pathname.endsWith('.crx');
-  const file = path.join(EXT_DIR, isCrx ? 'downloadx.crx' : 'updates.xml');
-  let stat;
-  try { stat = fs.statSync(file); } catch { stat = null; }
-  if (!stat || !stat.isFile()) {
-    res.writeHead(404, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
-    return res.end('Extension package not built. Run the installer or node installer/prepare-extension.mjs');
-  }
-  res.writeHead(200, {
-    'Content-Type': isCrx ? 'application/x-chrome-extension' : 'text/xml; charset=utf-8',
-    'Content-Length': stat.size,
-    'Cache-Control': 'no-store',
-    ...SECURITY_HEADERS,
-  });
-  if (req.method === 'HEAD') return res.end();
-  if (IS_PKG) {
-    try { res.end(fs.readFileSync(file)); } catch { try { res.destroy(); } catch { /* gone */ } }
-    return;
-  }
-  const stream = fs.createReadStream(file);
-  stream.on('error', () => { try { res.destroy(); } catch { /* gone */ } });
-  stream.pipe(res);
-}
 
 /* ---------------- SSE ---------------- */
 const sseClients = new Set();
@@ -411,267 +269,7 @@ setInterval(() => {
 }, 700).unref();
 
 /* ---------------- API router ---------------- */
-async function handleApi(req, res, pathname, query) {
-  const method = req.method;
 
-  if (pathname === '/api/health') {
-    return json(res, 200, {
-      ok: true, instance: INSTANCE_ID, version: VERSION, uptime: Math.round(process.uptime()),
-      pid: process.pid, platform: process.platform, node: process.version,
-    });
-  }
-
-  if (pathname === '/api/state') return json(res, 200, engine.snapshot());
-
-  if (pathname === '/api/free-space' && method === 'GET') {
-    const dir = engine.settings.rootDir;
-    const free = freeSpaceFor(dir);
-    return json(res, 200, {
-      ok: true,
-      dir,
-      free: free == null ? null : Math.round(free),
-    });
-  }
-
-  if (pathname === '/api/update-check' && method === 'GET') {
-    try {
-      return json(res, 200, { ok: true, ...(await checkForUpdate()) });
-    } catch (e) {
-      return json(res, 502, { ok: false, error: e.message, current: VERSION });
-    }
-  }
-
-  if (pathname === '/api/events') {
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-      'X-Accel-Buffering': 'no',
-      ...SECURITY_HEADERS,
-      ...corsHeaders(req.headers.origin),
-    });
-    res.write(`retry: 2000\n\nevent: snapshot\ndata: ${buildSnapshot()}\n\n`);
-    engine.dirty = false;
-    sseClients.add(res);
-    const cleanup = () => sseClients.delete(res);
-    req.on('close', cleanup);
-    req.on('error', cleanup);
-    return;
-  }
-
-  if (pathname === '/api/expand' && method === 'POST') {
-    const body = await readBody(req);
-    const result = expandPatternDetailed(body.text || body.url || '');
-    return json(res, 200, result);
-  }
-
-  if (pathname === '/api/scrape' && method === 'POST') {
-    const body = await readBody(req);
-    const pageUrl = String(body.url || '').trim();
-    if (!/^https?:\/\//i.test(pageUrl)) {
-      return json(res, 400, { error: 'A http(s) page URL is required' });
-    }
-    try {
-      const { res: page } = await httpget.request(pageUrl, {
-        headers: { accept: 'text/html,application/xhtml+xml,*/*' },
-        proxy: engine.settings.proxy,
-        rejectUnauthorized: !engine.settings.allowInvalidTls,
-        timeoutMs: 20000,
-      });
-      const html = (await readLimited(page, 4 * 1024 * 1024)).toString('utf8');
-      const links = extractLinks(html, pageUrl, { includeAssets: !!body.includeAssets });
-      return json(res, 200, { ok: true, url: pageUrl, count: links.length, links });
-    } catch (e) {
-      return json(res, 502, { ok: false, error: e.message });
-    }
-  }
-
-  if (pathname === '/api/downloads' && method === 'POST') {
-    const body = await readBody(req);
-    let urls = [];
-    if (Array.isArray(body.urls)) urls = body.urls;
-    else if (typeof body.url === 'string') urls = [body.url];
-    else if (typeof body.text === 'string') urls = expandPatternDetailed(body.text).urls;
-    urls = urls.filter((u) => /^(https?|ftps?):\/\//i.test(String(u).trim())).map((u) => String(u).trim());
-    urls = [...new Set(urls)];
-    if (!urls.length) return json(res, 400, { error: 'No valid http(s) or ftp(s) URL supplied' });
-    const mirrors = Array.isArray(body.mirrors)
-      ? body.mirrors.filter((u) => /^(https?|ftps?):\/\//i.test(String(u))).map((u) => String(u).trim())
-      : [];
-    const mirrorList = [...new Set(mirrors)].filter((m) => !urls.includes(m));
-    const base = {
-      filename: typeof body.filename === 'string' ? body.filename : '',
-      category: typeof body.category === 'string' ? body.category : undefined,
-      segments: body.segments,
-      speedLimitKBs: body.speedLimitKBs ? body.speedLimitKBs * 1024 : body.speedLimit,
-      referer: body.referer,
-      cookies: body.cookies,
-      headers: body.headers && typeof body.headers === 'object' && !Array.isArray(body.headers) ? body.headers : undefined,
-      username: typeof body.username === 'string' ? body.username : '',
-      password: typeof body.password === 'string' ? body.password : '',
-      proxy: typeof body.proxy === 'string' ? body.proxy : '',
-      dir: body.dir,
-      startedPaused: !!body.startedPaused,
-      expectedChecksum: body.expectedChecksum || body.checksum || '',
-      checksumAlgo: body.checksumAlgo || body.algo || '',
-      priority: body.priority,
-    };
-    try {
-      if (urls.length > 1) {
-        const created = urls.map((u) => engine.add({
-          urls: [u, ...mirrorList],
-          ...base,
-          filename: '',
-          skipSave: true,
-        }));
-        engine.saveNow();
-        return json(res, 201, { batch: created.map((d) => d.snapshot()), count: created.length });
-      }
-      const d = engine.add({ urls: [urls[0], ...mirrorList], ...base });
-      return json(res, 201, d.snapshot());
-    } catch (e) { return json(res, 400, { error: e.message }); }
-  }
-
-  let m = /^\/api\/downloads\/([^/]+)$/.exec(pathname);
-  if (m && method === 'GET') {
-    const d = engine.get(m[1]);
-    return d ? json(res, 200, d.snapshot()) : json(res, 404, { error: 'Download not found' });
-  }
-
-  m = /^\/api\/downloads\/([^/]+)\/(.+)$/.exec(pathname);
-  if (m) {
-    const [, id, action] = m;
-    const d = engine.get(id);
-    if (!d) return json(res, 404, { error: 'Download not found' });
-    if (method === 'POST') {
-      const body = action.includes('open') ? {} : await readBody(req).catch(() => ({}));
-      switch (action) {
-        case 'pause': await d.pause('user'); return json(res, 200, d.snapshot());
-        case 'resume': d.resume(); engine.markDirty(); return json(res, 200, d.snapshot());
-        case 'retry': d.retry(); return json(res, 200, d.snapshot());
-        case 'restart': await d.restart(); return json(res, 200, d.snapshot());
-        case 'cancel': await d.cancel(); return json(res, 200, d.snapshot());
-        case 'priority':
-          d.priority = Math.max(-100, Math.min(100, parseInt(body.value, 10) || 0));
-          engine.saveNow();
-          return json(res, 200, d.snapshot());
-        case 'limit':
-          d.setSpeedLimit((parseInt(body.kbs, 10) || 0) * 1024);
-          engine.saveNow();
-          return json(res, 200, d.snapshot());
-        case 'segments':
-          if (!['queued', 'paused', 'failed'].includes(d.status)) {
-            return json(res, 409, { error: 'Pause the download before changing connections' });
-          }
-          d.segmentsWanted = Math.max(1, Math.min(64, parseInt(body.value, 10) || d.segmentsWanted));
-          engine.saveNow();
-          return json(res, 200, d.snapshot());
-        case 'quality': {
-          const index = parseInt(body.index, 10);
-          if (!Number.isInteger(index) || index < 0 || index >= (d.variants || []).length) {
-            return json(res, 400, { error: 'Unknown quality' });
-          }
-          d.variantIndex = index;
-          // Another quality is a different file: throw the old one away.
-          try { fs.unlinkSync(d.finalPath); } catch { /* nothing there */ }
-          await d.restart();
-          engine.saveNow();
-          return json(res, 200, d.snapshot());
-        }
-        case 'verify': {
-          try {
-            const result = await d.verifyChecksum(body.algo || d.checksumAlgo, body.expected || d.expectedChecksum || '');
-            return json(res, 200, result);
-          } catch (e) { return json(res, 400, { error: e.message }); }
-        }
-        case 'open-file': {
-          if (!fs.existsSync(d.finalPath)) return json(res, 404, { error: 'File not found on disk' });
-          openPath(d.finalPath, false);
-          return json(res, 200, { ok: true });
-        }
-        case 'open-folder': {
-          if (!fs.existsSync(d.destDir)) return json(res, 404, { error: 'Folder not found on disk' });
-          openPath(d.finalPath, true);
-          return json(res, 200, { ok: true });
-        }
-        default: return json(res, 400, { error: 'Unknown action' });
-      }
-    }
-  }
-
-  m = /^\/api\/downloads\/([^/]+)$/.exec(pathname);
-  if (m && method === 'DELETE') {
-    const ok = await engine.remove(m[1], query.get('file') === '1');
-    return ok ? json(res, 200, { ok: true }) : json(res, 404, { error: 'Not found' });
-  }
-
-  if (pathname === '/api/settings' && method === 'GET') return json(res, 200, engine.settings);
-  if (pathname === '/api/settings' && (method === 'PUT' || method === 'POST')) {
-    const body = await readBody(req);
-    const allowed = ['rootDir', 'maxConcurrent', 'maxConnections', 'defaultSegments', 'globalSpeedLimit',
-      'organizeByCategory', 'scheduleEnabled', 'scheduleFrom', 'scheduleTo', 'shutdownWhenDone', 'proxy',
-      'allowInvalidTls', 'notifications', 'notificationSound', 'updateUrl', 'maxRetries', 'webhookUrl'];
-    const patch = {};
-    for (const k of allowed) if (k in body) patch[k] = body[k];
-    engine.settings = normalizeSettings(patch, engine.settings);
-    engine.bucket.setRate(engine.settings.globalSpeedLimit);
-    try { fs.mkdirSync(engine.settings.rootDir, { recursive: true }); } catch { /* best effort */ }
-    engine.saveNow();
-    return json(res, 200, engine.settings);
-  }
-
-  if (pathname === '/api/pause-all' && method === 'POST') { engine.pauseAll('user'); return json(res, 200, { ok: true }); }
-  if (pathname === '/api/resume-all' && method === 'POST') { engine.resumeAll(); return json(res, 200, { ok: true }); }
-  if (pathname === '/api/cancel-shutdown' && method === 'POST') { engine.cancelShutdown(); return json(res, 200, { ok: true }); }
-  if (pathname === '/api/retry-failed' && method === 'POST') { return json(res, 200, { retried: engine.retryAllFailed() }); }
-  if (pathname === '/api/clear-finished' && method === 'POST') {
-    const body = await readBody(req).catch(() => ({}));
-    const removed = await engine.clearFinished(!!body.deleteFiles);
-    return json(res, 200, { removed });
-  }
-  if (pathname === '/api/extension/install' && method === 'POST') {
-    const folder = extensionFolder();
-    const storeUrl = CHROME_STORE_ID
-      ? `https://chromewebstore.google.com/detail/${encodeURIComponent(CHROME_STORE_ID)}`
-      : '';
-    const mode = (EXT_MODE === 'store' || EXT_MODE === 'auto') && storeUrl ? 'store' : 'folder';
-    openPath(mode === 'store' ? storeUrl : folder, false);
-    return json(res, 200, {
-      ok: true,
-      mode,
-      storeUrl,
-      folder,
-      chromeStoreId: CHROME_STORE_ID,
-      edgeStoreId: EDGE_STORE_ID,
-      firefoxAddonId: FIREFOX_ID,
-      crx: fs.existsSync(path.join(EXT_DIR, 'downloadx.crx')),
-    });
-  }
-  if (pathname === '/api/quit' && method === 'POST') {
-    json(res, 200, { ok: true });
-    setTimeout(() => shutdown(0), 100);
-    return;
-  }
-
-  return json(res, 404, { error: 'Unknown API route' });
-}
-
-function openPath(target, select) {
-  if (process.env.DLX_NO_OPEN === '1') return;
-  const child = (() => {
-    if (process.platform === 'win32') {
-      return select
-        ? spawn('explorer.exe', [`/select,${target}`], { detached: true, stdio: 'ignore' })
-        : spawn('explorer.exe', [target], { detached: true, stdio: 'ignore' });
-    }
-    if (process.platform === 'darwin') {
-      return spawn('open', [select ? path.dirname(target) : target], { detached: true, stdio: 'ignore' });
-    }
-    return spawn('xdg-open', [select ? path.dirname(target) : target], { detached: true, stdio: 'ignore' });
-  })();
-  child.on('error', () => { /* opener unavailable */ });
-  child.unref();
-}
 
 function isAllowedHost(hostHeader) {
   if (!hostHeader) return true;
@@ -697,7 +295,7 @@ const server = http.createServer((req, res) => {
   const pathname = u.pathname;
 
   if (req.method === 'OPTIONS') {
-    const headers = corsHeaders(req.headers.origin);
+    const headers = apiRouter.corsHeaders(req.headers.origin);
     if (!headers['Access-Control-Allow-Origin']) {
       res.writeHead(403, { 'Content-Type': 'text/plain', ...SECURITY_HEADERS });
       return res.end('Origin not allowed');
@@ -706,28 +304,28 @@ const server = http.createServer((req, res) => {
     return res.end();
   }
   if (pathname === '/ext/updates.xml' || pathname === '/ext/downloadx.crx') {
-    serveExtensionFile(req, res, pathname);
+    staticHandlers.serveExtensionFile(req, res, pathname);
     return;
   }
   if (pathname.startsWith('/api/')) {
     const origin = req.headers.origin;
-    if (origin && !isAllowedOrigin(origin)) {
-      return json(res, 403, { error: 'Origin not allowed' });
+    if (origin && !originCheck(origin)) {
+      return apiRouter.json(res, 403, { error: 'Origin not allowed' });
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       const hasBody = (parseInt(req.headers['content-length'], 10) || 0) > 0 || !!req.headers['transfer-encoding'];
       const type = String(req.headers['content-type'] || '');
       if (hasBody && !type.includes('application/json')) {
-        return json(res, 415, { error: 'Content-Type must be application/json' });
+        return apiRouter.json(res, 415, { error: 'Content-Type must be application/json' });
       }
     }
-    handleApi(req, res, pathname, u.searchParams).catch((e) => {
+    apiRouter.handleApi(req, res, pathname, u.searchParams).catch((e) => {
       console.error('[downloadX] API error:', e.message);
-      try { json(res, e.status || 500, { error: e.message }); } catch { /* response gone */ }
+      try { apiRouter.json(res, e.status || 500, { error: e.message }); } catch { /* response gone */ }
     });
     return;
   }
-  serveStatic(req, res, pathname);
+  staticHandlers.serveStatic(req, res, pathname);
 });
 
 server.on('clientError', (err, socket) => {

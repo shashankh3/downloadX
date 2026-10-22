@@ -142,7 +142,7 @@ function stripLiterals(src) {
         i++;
       }
       const literal = src.slice(start, i);
-      out += keepNewlines(literal).slice(0, -1) + 'R';
+      out += keepNewlines(literal).replace(/[^\n]/g, '0');
       continue;
     }
     out += c;
@@ -156,7 +156,13 @@ function isRegexStart(before) {
   const trimmed = before.replace(/\s+$/, '');
   if (!trimmed) return true;
   const last = trimmed[trimmed.length - 1];
-  return '(,=:[!&|?{};+-*%^~<>'.includes(last);
+  if ('(,=:[!&|?{};+-*%^~<>'.includes(last)) return true;
+  // after a keyword a slash starts a regular expression
+  const word = /([A-Za-z_$][\w$]*)$/.exec(trimmed);
+  if (word && /^(return|typeof|case|in|of|new|delete|void|instanceof|do|else|yield|await|from|as)$/.test(word[1])) {
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -313,6 +319,89 @@ for (const file of allFiles) {
   const rel = path.relative(ROOT, file);
   if (/\.(orig|rej|bak|tmp)$/i.test(rel)) fail(rel, 'stray backup file');
   if (/\.dxpart$/i.test(rel)) fail(rel, 'leftover partial download');
+}
+
+/* ---------------- 8. no name is used that the file does not define ---------------- */
+{
+  /* JavaScript keywords and reserved words. */
+  const KEYWORDS = new Set([
+    'await', 'break', 'case', 'catch', 'class', 'const', 'continue', 'debugger', 'default',
+    'delete', 'do', 'else', 'export', 'extends', 'finally', 'for', 'function', 'if', 'import',
+    'in', 'instanceof', 'let', 'new', 'of', 'return', 'static', 'super', 'switch', 'this',
+    'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'async', 'get', 'set',
+    'true', 'false', 'null', 'undefined', 'NaN', 'Infinity', 'arguments', 'eval', 'implements',
+    'interface', 'package', 'private', 'protected', 'public', 'enum', 'from', 'as',
+  ]);
+
+  /* Names that Node and the browser provide. */
+  const GLOBALS = new Set([
+    'require', 'module', 'exports', 'process', 'console', 'Buffer', 'globalThis', 'global',
+    'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'setImmediate',
+    'clearImmediate', 'queueMicrotask', 'structuredClone', 'performance', 'fetch',
+    'URL', 'URLSearchParams', 'TextDecoder', 'TextEncoder', 'AbortController',
+    'AbortSignal', 'Headers', 'Request', 'Response', 'FormData', 'Blob', 'crypto',
+    'Promise', 'JSON', 'Math', 'Date', 'Object', 'Array', 'String', 'Number', 'Boolean',
+    'Error', 'TypeError', 'RangeError', 'SyntaxError', 'ReferenceError', 'EvalError',
+    'URIError', 'AggregateError', 'Map', 'Set', 'WeakMap', 'WeakSet', 'Symbol', 'RegExp',
+    'Intl', 'Reflect', 'Proxy', 'BigInt', 'BigInt64Array', 'BigUint64Array', 'ArrayBuffer',
+    'SharedArrayBuffer', 'Atomics', 'DataView', 'Int8Array', 'Int16Array', 'Int32Array',
+    'Uint8Array', 'Uint16Array', 'Uint32Array', 'Float32Array', 'Float64Array', 'Uint8ClampedArray',
+    'WeakRef', 'FinalizationRegistry', 'WebAssembly', 'parseInt', 'parseFloat', 'isNaN',
+    'isFinite', 'encodeURI', 'encodeURIComponent', 'decodeURI', 'decodeURIComponent',
+    'escape', 'unescape', 'Event', 'EventTarget', 'CustomEvent', 'MessageChannel',
+    'MessagePort', 'BroadcastChannel', 'DOMException', 'atob', 'btoa', 'ReadableStream',
+    'WritableStream', 'TransformStream', 'CompressionStream', 'DecompressionStream',
+    'document', 'window', 'navigator', 'localStorage', 'sessionStorage', 'location',
+    'chrome', 'browser', 'self', 'name', 'Notification', '__dirname', '__filename',
+  ]);
+
+  for (const file of jsFiles) {
+    const rel = path.relative(ROOT, file);
+    if (rel.startsWith('extension' + path.sep + 'chrome' + path.sep)) continue;
+    if (rel.startsWith('extension' + path.sep + 'firefox' + path.sep)) continue;
+    const src = fs.readFileSync(file, 'utf8');
+    const code = stripLiterals(src);
+
+    const defined = new Set([...KEYWORDS, ...GLOBALS]);
+    for (const m of code.matchAll(/import\s*\{([^}]+)\}\s*from/g)) {
+      for (const part of m[1].split(',')) {
+        const n = part.split(/\s+as\s+/).pop().trim();
+        if (n) defined.add(n);
+      }
+    }
+    for (const m of code.matchAll(/import\s+([A-Za-z_$][\w$]*)\s+from/g)) defined.add(m[1]);
+    /* One statement may declare several names ("let a = 1, b = 2"). */
+    const declare = (text) => {
+      for (const part of text.split(',')) {
+        const t = part.trim();
+        if (/^[A-Za-z_$][\w$]*$/.test(t)) { defined.add(t); continue; }
+        for (const id of t.matchAll(/([A-Za-z_$][\w$]*)\s*(?::\s*([A-Za-z_$][\w$]*))?/g)) {
+          defined.add(id[1]);
+          if (id[2]) defined.add(id[2]);
+        }
+      }
+    };
+    for (const m of code.matchAll(/(?:const|let|var)\s+([^;]+?);/g)) declare(m[1]);
+    for (const m of code.matchAll(/(?:^|[^.\w$])function\s*\*?\s*([A-Za-z_$][\w$]*)/g)) defined.add(m[1]);
+    for (const m of code.matchAll(/(?:^|[^.\w$])class\s+([A-Za-z_$][\w$]*)/g)) defined.add(m[1]);
+    for (const m of code.matchAll(/\(([^)]*)\)\s*(?:=>|\{)/g)) declare(m[1]);
+    // object literal keys and shorthand properties are not references
+    for (const m of code.matchAll(/([A-Za-z_$][\w$]*)\s*:/g)) defined.add(m[1]);
+    for (const m of code.matchAll(/([A-Za-z_$][\w$]*)\s*[,}]/g)) defined.add(m[1]);
+    for (const m of code.matchAll(/([A-Za-z_$][\w$]*)\s*\(/g)) defined.add(m[1]);
+
+    const used = new Map();
+    const useRe = /(?<![.\w$])([A-Za-z_$][\w$]*)\s*(?![:\w$])/g;
+    let m;
+    while ((m = useRe.exec(code))) {
+      const name = m[1];
+      if (defined.has(name)) continue;
+      if (!used.has(name)) used.set(name, code.slice(0, m.index).split('\n').length);
+    }
+    for (const [name, line] of used) {
+      fail(rel, `"${name}" is used but never defined in this file (line ${line})`);
+    }
+  }
 }
 
 /* ---------------- 9. every translatable string has a translation ---------------- */
