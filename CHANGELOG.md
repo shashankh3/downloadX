@@ -7,6 +7,10 @@ project uses [semantic versioning](https://semver.org/).
 ## [1.4.0] - 2026-10-22
 
 ### Fixed
+- **The packaging manifests pointed at a stale EXE.** The SHA-256 in the winget
+  and Chocolatey manifests was taken from an older build, so every install
+  would have failed the checksum verification. `npm run check:release` now
+  catches this.
 - **A segmented download no longer re-fetches the same range over and over.**
   Node can emit several `data` events in one tick, so the byte counter was
   updated by concurrent handlers. Every download ended in a "short read" and
@@ -30,11 +34,16 @@ project uses [semantic versioning](https://semver.org/).
 - The browser origin allowlist can now be pinned with `DLX_EXTENSION_IDS` or
   `extension.allowedIds`.
 - `npm run build:extension` prepares the Chrome and Firefox packages.
+- `npm run check:release` verifies that the winget and Chocolatey manifests
+  match the version and the SHA-256 of the built EXE - a stale manifest would
+  have broken every install.
+- `test/e2e.test.mjs` starts the real app: a fresh install, a real download,
+  a restart, a second instance and a clean shutdown (17 checks).
 - `docs/ARCHITECTURE.md` and `docs/API.md` describe the code and the whole
   REST surface.
 - The linter learned real static rules: no `var`, no loose equality, no
   `require()` inside a function, and warnings for oversized files.
-- 134 new checks: unit tests for the small modules, a DOM-shim test for the
+- 151 new checks: unit tests for the small modules, a DOM-shim test for the
   web UI, engine tests for the queue, the history and the live feed, an FTP
   test for a data connection that dies, and tests for the origin rules.
 

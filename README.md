@@ -377,21 +377,39 @@ dist/              build output: downloadX.exe, downloadX.ico (npm run build:exe
 Everything runs locally — no external network required.
 
 ```bash
-npm test                 # engine + API + network + streams + FTP + extension + UI (default)
+npm test                 # engine + API + network + streams + FTP + extension + UI + e2e
 npm run lint             # dependency-free hygiene checks (syntax, versions, dead files)
 npm run check            # lint + every test suite
+npm run check:release    # the packaging manifests match the version and the built EXE
 npm run test:engine      # engine, patterns, store, resume, mirrors, checksums…
+npm run test:units       # the small modules: patterns, lock, protocol, bucket, store
 npm run test:api         # spawned server: REST, SSE, Host/Origin, traversal, update check
 npm run test:net         # HTTP/SOCKS5 proxies, Basic/Digest auth, custom headers
 npm run test:streams     # local HLS/DASH servers: AES-128, fMP4, byte ranges, resume
 npm run test:ftp         # local FTP server: ranged REST transfers, auth, fallbacks
 npm run test:extension   # connector + sniffer + rules + content/options files (mocked)
 npm run test:ui          # web UI modules against a DOM shim (rendering, filters, ids)
+npm run test:e2e         # a fresh app, a real download, a restart, a second instance
 npm run test:integration # pause/resume, batch, no-Range fallback, speed limit
 npm run test:local       # pause/resume stress against a controlled range server
 npm run test:installer   # CRX3 signing, ZIP, extension builds, installer dry-run/sandbox
 npm run bench            # 1 vs 16 connections on a throttled local server
 ```
+
+### Releasing
+
+```bash
+npm run build:exe        # dist/downloadX.exe
+npm run package:manifests # winget + chocolatey, with the real SHA-256
+npm run check:release    # fails if the manifests drifted from the built EXE
+gh release create v1.4.0 dist/downloadX.exe --notes-file CHANGELOG.md
+```
+
+`npm run check:release` compares the checksum in the winget and Chocolatey
+manifests with the EXE that was just built, so a stale manifest can never
+silently break an install. It also checks that the version is the same in
+`package.json`, the lock file, the extension manifest and the packaging
+files.
 
 CI runs the full matrix (Windows + Linux, Node 18/20/22/24) on every push and PR.
 

@@ -8,7 +8,7 @@ PortableCommandAlias: downloadx
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/shashankh3/downloadX/releases/download/v1.4.0/downloadX.exe
-    InstallerSha256: 4DBF48C26199DDF1B90F737760A2E29F1FE3F14E9AE53114B45EE4DECB1DA1D8
+    InstallerSha256: EBE011C900E97EF0387344C854FBA31549E284B10789CD63C40050FB280DAA77
     InstallerLocale: en-US
 ManifestType: installer
 ManifestVersion: 1.6.0
