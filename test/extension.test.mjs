@@ -265,6 +265,28 @@ const postBody = (call) => JSON.parse(call.opts.body);
   check('safety: catching resumes after backoff', state.canceled.includes(16));
 }
 
+/* ---------------- the media list survives a service worker restart ---------------- */
+{
+  const { connector, state } = build();
+  await connector.onHeadersReceived({
+    url: 'https://cdn.example.com/clip.mp4',
+    tabId: 42,
+    responseHeaders: [{ name: 'content-type', value: 'video/mp4' }, { name: 'content-length', value: '5242880' }],
+  });
+  const stored = state.storage.dlxMedia;
+  check('mv3: the sniffed media is stored', !!stored && Array.isArray(stored['42']), JSON.stringify(stored));
+  check('mv3: the stored entry has the url',
+    !!stored && stored['42'] && stored['42'][0] && stored['42'][0].url === 'https://cdn.example.com/clip.mp4');
+
+  // A new service worker (the browser starts a fresh one after 30 seconds of
+  // inactivity) must find the media again.
+  const restarted = build({ storage: { ...state.storage } });
+  await restarted.connector.init();
+  const media = restarted.connector.mediaForTab(42);
+  check('mv3: the media is restored after a restart', media.length === 1 && media[0].url === 'https://cdn.example.com/clip.mp4',
+    JSON.stringify(media));
+}
+
 /* ---------------- toggle + wiring ---------------- */
 {
   const { connector, state } = build({ storage: { intercept: true } });

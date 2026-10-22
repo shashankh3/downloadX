@@ -97,6 +97,42 @@ function createConnector(ext, deps = {}) {
   const seen = new Map();
   const mediaByTab = new Map();
 
+  /*
+   * An MV3 service worker is stopped after 30 seconds of inactivity, which
+   * would throw the sniffed media away and make the floating button vanish.
+   * The list is therefore kept in storage.session (and in storage.local where
+   * session storage is not available).
+   */
+  const MEDIA_STORE = 'dlxMedia';
+
+  function mediaStore() {
+    return (ext.storage && ext.storage.session) || (ext.storage && ext.storage.local) || null;
+  }
+
+  async function saveMedia() {
+    const store = mediaStore();
+    if (!store) return;
+    const data = {};
+    for (const [tabId, list] of mediaByTab) data[tabId] = list;
+    try {
+      await apiCall(store.set, store, [{ [MEDIA_STORE]: data }]);
+    } catch { /* the list is rebuilt on the next sniff */ }
+  }
+
+  async function loadMedia() {
+    const store = mediaStore();
+    if (!store) return;
+    try {
+      const res = await apiCall(store.get, store, [MEDIA_STORE]);
+      const data = res && res[MEDIA_STORE];
+      if (!data || typeof data !== 'object') return;
+      mediaByTab.clear();
+      for (const [tabId, list] of Object.entries(data)) {
+        if (Array.isArray(list)) mediaByTab.set(Number(tabId), list);
+      }
+    } catch { /* nothing to restore */ }
+  }
+
   /* Works with both promise-based (Firefox browser.*) and callback-based
    * (Chrome chrome.*) extension APIs. */
   function apiCall(fn, self, args) {
@@ -194,6 +230,7 @@ function createConnector(ext, deps = {}) {
     if (dup >= 0) list.splice(dup, 1);
     list.unshift(Object.assign({ at: now() }, entry));
     mediaByTab.set(tabId, list.slice(0, MEDIA_PER_TAB));
+    await saveMedia();
     await notifyTab(tabId);
   }
 
@@ -462,6 +499,7 @@ function createConnector(ext, deps = {}) {
 
   async function onRemoved(tabId) {
     mediaByTab.delete(tabId);
+    await saveMedia();
   }
 
   async function onStartup() {
@@ -494,6 +532,8 @@ function createConnector(ext, deps = {}) {
     if (ext.tabs && ext.tabs.onRemoved) ext.tabs.onRemoved.addListener(onRemoved);
     setupMenus();
     refreshBadge().catch(() => {});
+    // Restore the media list of a service worker that was stopped and started again.
+    loadMedia().catch(() => {});
   }
 
   return {
