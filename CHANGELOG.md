@@ -7,6 +7,12 @@ project uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **A ZIP archive is repaired entry by entry.** When the checksum of a `.zip`
+  does not match, the directory of the archive is read and every entry is
+  checked against its own CRC-32. Only the damaged entries are downloaded again
+  instead of the whole archive.
+- **The contents of a ZIP can be listed and extracted** (`/api/downloads/:id/
+  zip-entries` and `extract-entries`) without unpacking the whole file.
 - **Quality selection for HLS and DASH streams.** The available resolutions and
   bitrates are listed in the API and in the details panel of a download; picking
   another one downloads that quality instead.

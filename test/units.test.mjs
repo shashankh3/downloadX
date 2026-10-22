@@ -314,6 +314,88 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   }
 }
 
+/* ---------------- lib/zip.js: the directory of an archive ---------------- */
+{
+  const zip = require('../lib/zip.js');
+  const zlib = require('node:zlib');
+
+  // Build a real archive: two stored entries and one deflated entry.
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  const add = (name, data, method) => {
+    const nameBuf = Buffer.from(name, 'utf8');
+    const plain = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
+    const payload = method === 8 ? zlib.deflateRawSync(plain) : plain;
+    const crc = zip.crc32(plain);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(zip.LOCAL_SIG, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(plain.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    parts.push(local, nameBuf, payload);
+
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(zip.CD_SIG, 0);
+    cd.writeUInt16LE(20, 4);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(method, 10);
+    cd.writeUInt32LE(crc, 16);
+    cd.writeUInt32LE(payload.length, 20);
+    cd.writeUInt32LE(plain.length, 24);
+    cd.writeUInt16LE(nameBuf.length, 28);
+    cd.writeUInt32LE(offset, 42);
+    central.push(Buffer.concat([cd, nameBuf]));
+    offset += local.length + nameBuf.length + payload.length;
+  };
+  add('readme.txt', 'hello from downloadX', 0);
+  add('data/big.bin', Buffer.alloc(200000, 0x5a), 8);
+  add('empty.txt', '', 0);
+
+  const cdBuf = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(zip.EOCD_SIG, 0);
+  eocd.writeUInt16LE(3, 8);
+  eocd.writeUInt16LE(3, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  const archive = Buffer.concat([...parts, cdBuf, eocd]);
+  const zipFile = path.join(TMP, 'test.zip');
+  fs.writeFileSync(zipFile, archive);
+
+  const parsed = zip.parseEocd(archive.subarray(Math.max(0, archive.length - 1024)));
+  check('zip: the end of central directory is found', !!parsed, JSON.stringify(parsed));
+  check('zip: it knows the entry count', parsed && parsed.entries === 3, String(parsed && parsed.entries));
+  check('zip: it knows the directory offset', parsed && parsed.cdOffset === offset, String(parsed && parsed.cdOffset));
+
+  const entries = zip.parseCentralDirectory(cdBuf);
+  check('zip: every entry is listed', entries.length === 3, String(entries.length));
+  check('zip: the names are read', entries[0] && entries[0].name === 'readme.txt', entries[0] && entries[0].name);
+  check('zip: the method is read', entries[1] && entries[1].method === 8, String(entries[1] && entries[1].method));
+
+  const index = await zip.readLocalIndex(zipFile);
+  check('zip: the directory of a file is read', !!index && index.entries.length === 3, String(index && index.entries.length));
+
+  const verified = await zip.verifyEntries(zipFile, index.entries);
+  check('zip: every entry passes the crc check', verified.broken.length === 0, JSON.stringify(verified.broken));
+  check('zip: all entries were checked', verified.checked === 3, String(verified.checked));
+
+  // Corrupt one entry: only that entry must be reported.
+  const damaged = Buffer.from(archive);
+  damaged[200] = damaged[200] ^ 0xff;
+  const damagedFile = path.join(TMP, 'damaged.zip');
+  fs.writeFileSync(damagedFile, damaged);
+  const damagedCheck = await zip.verifyEntries(damagedFile, index.entries);
+  check('zip: a damaged entry is found', damagedCheck.broken.length >= 1, JSON.stringify(damagedCheck.broken.map((b) => b.name)));
+
+  check('zip: the crc of a known string is right', zip.crc32(Buffer.from('123456789')) === 0xcbf43926, zip.crc32(Buffer.from('123456789')).toString(16));
+  const ranges = zip.entryRanges([index.entries[0]]);
+  check('zip: an entry range is computed', ranges.length === 1 && ranges[0].end >= ranges[0].start, JSON.stringify(ranges));
+}
+
 /* ---------------- report ---------------- */
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

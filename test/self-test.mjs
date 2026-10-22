@@ -12,6 +12,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { Engine } = require('../lib/engine.js');
+const { crc32: zipCrc32 } = require('../lib/zip.js');
 const { expandPattern, expandPatternDetailed } = require('../lib/patterns.js');
 const { TokenBucket } = require('../lib/bucket.js');
 const store = require('../lib/store.js');
@@ -805,6 +806,98 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   }
   engine.close();
   srvR.close();
+}
+
+/* ---------------- a damaged archive is repaired entry by entry ---------------- */
+{
+  const zlib = require('node:zlib');
+  // Build a small archive with one deflated entry.
+  const parts = [];
+  const central = [];
+  let offset = 0;
+  const add = (name, data) => {
+    const nameBuf = Buffer.from(name, 'utf8');
+    const plain = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
+    const payload = zlib.deflateRawSync(plain);
+    const crc = zipCrc32(plain);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(8, 8);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(payload.length, 18);
+    local.writeUInt32LE(plain.length, 22);
+    local.writeUInt16LE(nameBuf.length, 26);
+    parts.push(local, nameBuf, payload);
+    const cd = Buffer.alloc(46);
+    cd.writeUInt32LE(0x02014b50, 0);
+    cd.writeUInt16LE(20, 4);
+    cd.writeUInt16LE(20, 6);
+    cd.writeUInt16LE(8, 10);
+    cd.writeUInt32LE(crc, 16);
+    cd.writeUInt32LE(payload.length, 20);
+    cd.writeUInt32LE(plain.length, 24);
+    cd.writeUInt16LE(nameBuf.length, 28);
+    cd.writeUInt32LE(offset, 42);
+    central.push(Buffer.concat([cd, nameBuf]));
+    offset += local.length + nameBuf.length + payload.length;
+  };
+  add('readme.txt', 'hello');
+  add('data.bin', crypto.randomBytes(8 * 1024 * 1024));
+  const cdBuf = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(2, 8);
+  eocd.writeUInt16LE(2, 10);
+  eocd.writeUInt32LE(cdBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  const good = Buffer.concat([...parts, cdBuf, eocd]);
+  const goodHash = sha256(good);
+  // inside the payload of the first entry (local header 30 + name 9 = 39)
+  const damageAt = 30 + 'readme.txt'.length;
+  let damagedRequests = 0;
+  const srvZ = await makeServer((req, res) => {
+    const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
+    let start = 0, end = good.length - 1;
+    if (m) {
+      start = parseInt(m[1], 10);
+      if (m[2]) end = Math.min(parseInt(m[2], 10), good.length - 1);
+    }
+    const slice = Buffer.from(good.subarray(start, end + 1));
+    // The first two transfers of the damaged area are broken, the rest is fine.
+    const at = damageAt - start;
+    if (at >= 0 && at < slice.length) {
+      damagedRequests++;
+      if (damagedRequests <= 2) slice[at] ^= 0xff;
+    }
+    res.writeHead(m ? 206 : 200, {
+      'Content-Length': String(slice.length),
+      'Accept-Ranges': 'bytes',
+      ...(m ? { 'Content-Range': `bytes ${start}-${end}/${good.length}` } : {}),
+    });
+    res.end(slice);
+  });
+  const engine = new Engine(path.join(TMP, 'engine29'));
+  engine.settings.rootDir = path.join(TMP, 'files29');
+  const d = engine.add({
+    urls: [`http://127.0.0.1:${srvZ.address().port}/bundle.zip`],
+    segments: 1,
+    filename: 'bundle.zip',
+    expectedChecksum: goodHash,
+  });
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 90000);
+  check('zip repair: the download completes', done.status === 'completed', done.error);
+  if (done.finalPath && fs.existsSync(done.finalPath)) {
+    check('zip repair: the repaired archive matches the hash', (await hashFile(done.finalPath)) === goodHash);
+  } else {
+    let listing = [];
+    try { listing = fs.readdirSync(done.destDir); } catch { /* none */ }
+    check('zip repair: the repaired archive matches the hash', false,
+      `path=${done.finalPath} name=${done.filename} dir=${listing.join(',')}`);
+  }
+  check('zip repair: the broken area was fetched again', damagedRequests >= 3, `${damagedRequests} requests`);
+  engine.close();
+  srvZ.close();
 }
 
 srv.close();

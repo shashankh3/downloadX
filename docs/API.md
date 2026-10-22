@@ -156,6 +156,8 @@ DELETE /api/downloads/<id>?file=1   # and the files
 | `segments` | `{"value": 32}` | Sets the connection count (only while paused) |
 | `quality` | `{"index": 0}` | Picks another quality of a stream (the file is downloaded again) |
 | `verify` | `{"algo": "sha256", "expected": "…"}` | Verifies the checksum now |
+| `zip-entries` | – | Lists the entries of a finished ZIP archive |
+| `extract-entries` | `{"names": ["a/setup.exe"]}` | Writes single entries of a ZIP archive next to it |
 | `open-file` | – | Opens the finished file |
 | `open-folder` | – | Opens the folder in the file manager |
 
