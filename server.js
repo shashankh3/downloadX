@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const { spawn } = require('child_process');
 const { Engine, normalizeSettings } = require('./lib/engine');
 const { expandPatternDetailed } = require('./lib/patterns');
+const { extractLinks } = require('./lib/scrape');
 const { InstanceLock, writePortFile, removePortFile } = require('./lib/instance');
 const httpget = require('./lib/httpget');
 const { createOriginCheck } = require('./lib/origin');
@@ -462,6 +463,27 @@ async function handleApi(req, res, pathname, query) {
     const body = await readBody(req);
     const result = expandPatternDetailed(body.text || body.url || '');
     return json(res, 200, result);
+  }
+
+  if (pathname === '/api/scrape' && method === 'POST') {
+    const body = await readBody(req);
+    const pageUrl = String(body.url || '').trim();
+    if (!/^https?:\/\//i.test(pageUrl)) {
+      return json(res, 400, { error: 'A http(s) page URL is required' });
+    }
+    try {
+      const { res: page } = await httpget.request(pageUrl, {
+        headers: { accept: 'text/html,application/xhtml+xml,*/*' },
+        proxy: engine.settings.proxy,
+        rejectUnauthorized: !engine.settings.allowInvalidTls,
+        timeoutMs: 20000,
+      });
+      const html = (await readLimited(page, 4 * 1024 * 1024)).toString('utf8');
+      const links = extractLinks(html, pageUrl, { includeAssets: !!body.includeAssets });
+      return json(res, 200, { ok: true, url: pageUrl, count: links.length, links });
+    } catch (e) {
+      return json(res, 502, { ok: false, error: e.message });
+    }
   }
 
   if (pathname === '/api/downloads' && method === 'POST') {

@@ -68,6 +68,34 @@ export function initAddDialog() {
 
   $('#add-segments').addEventListener('input', (e) => { $('#add-segv').textContent = e.target.value; });
 
+  /* Grab the download links of a page and put them into the list. */
+  $('#add-grab').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const hint = $('#add-grab-hint');
+    const pageUrl = $('#add-urls').value.trim().split(/\r?\n/)[0] || '';
+    if (!/^https?:\/\//i.test(pageUrl)) {
+      hint.textContent = 'Put the page address in the box above first';
+      return;
+    }
+    btn.disabled = true;
+    hint.textContent = 'Looking for links…';
+    try {
+      const r = await api('/api/scrape', { method: 'POST', body: { url: pageUrl } });
+      const urls = (r.links || []).map((l) => l.url);
+      if (!urls.length) {
+        hint.textContent = 'No download links found on that page';
+        return;
+      }
+      $('#add-urls').value = urls.join('\n');
+      hint.textContent = `Found ${urls.length} link${urls.length === 1 ? '' : 's'}`;
+      $('#add-preview').textContent = `Will add ${urls.length} downloads`;
+    } catch (err) {
+      hint.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
   $('#add-ok').addEventListener('click', async () => {
     const text = $('#add-urls').value.trim();
     if (!text) return toast('Enter at least one URL', 'err');

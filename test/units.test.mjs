@@ -209,6 +209,35 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   control.destroy();
 }
 
+/* ---------------- lib/scrape.js ---------------- */
+{
+  const { extractLinks } = require('../lib/scrape.js');
+  const html = [
+    '<html><body>',
+    '<a href="/files/manual.pdf">manual</a>',
+    '<a href="files/setup.exe" download>setup</a>',
+    '<a href="https://other.example/x.zip">other</a>',
+    '<a href="page.html">page</a>',
+    '<a href="style.css">css</a>',
+    '<a href="javascript:void(0)">js</a>',
+    '<a href="#top">top</a>',
+    '<a href="/files/manual.pdf">manual again</a>',
+    '<img src="/logo.png">',
+    '</body></html>',
+  ].join('');
+  const links = extractLinks(html, 'https://example.com/dir/index.html');
+  const urls = links.map((l) => l.url);
+  check('scrape: relative links are resolved', urls.includes('https://example.com/files/manual.pdf'), urls.join(','));
+  check('scrape: the same link is only listed once', new Set(urls).size === urls.length, urls.join(','));
+  check('scrape: assets are skipped', !urls.some((u) => /\.(css|png|html)$/.test(u)), urls.join(','));
+  check('scrape: javascript and anchors are skipped', !urls.some((u) => u.startsWith('javascript:') || u.endsWith('#top')), urls.join(','));
+  check('scrape: absolute links are kept', urls.includes('https://other.example/x.zip'), urls.join(','));
+  check('scrape: the likely downloads come first', links[0] && links[0].likely === true, JSON.stringify(links[0]));
+  const withAssets = extractLinks(html, 'https://example.com/dir/index.html', { includeAssets: true });
+  check('scrape: assets can be included', withAssets.some((l) => /\.css$/.test(l.url)), String(withAssets.length));
+  check('scrape: an empty page yields nothing', extractLinks('', 'https://example.com/').length === 0);
+}
+
 /* ---------------- lib/origin.js ---------------- */
 {
   const { createOriginCheck, normalizeIds } = require('../lib/origin.js');

@@ -48,6 +48,16 @@ const BLOB_HASH = crypto.createHash('sha256').update(BLOB).digest('hex');
 
 const fileServer = http.createServer((req, res) => {
   if (req.url.includes('missing')) { res.writeHead(404); return res.end('nope'); }
+  if (req.url.startsWith('/page')) {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end([
+      '<html><body>',
+      '<a href="/files/manual.pdf">manual</a>',
+      '<a href="files/setup.exe" download>setup</a>',
+      '<a href="style.css">css</a>',
+      '</body></html>',
+    ].join(''));
+  }
   const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
   let start = 0, end = BLOB.length - 1;
   if (m) {
@@ -357,6 +367,17 @@ try {
     });
     check('api: duplicate mirror removed', add.status === 201 && add.json.urls.length === 2 && add.json.urls[0] !== add.json.urls[1], JSON.stringify(add.json.urls));
     await api(`/api/downloads/${add.json.id}`, { method: 'DELETE' });
+  }
+
+  /* ---------------- site grabber ---------------- */
+  {
+    const bad = await api('/api/scrape', { method: 'POST', body: { url: 'not a url' } });
+    check('scrape: a bad page url is rejected', bad.status === 400, JSON.stringify(bad.json));
+    const page = await api('/api/scrape', { method: 'POST', body: { url: `${fileBase}/page` } });
+    const urls = (page.json.links || []).map((l) => l.url);
+    check('scrape: the links of a page are found', page.status === 200 && urls.length === 2, JSON.stringify(urls));
+    check('scrape: the links are absolute', urls.every((u) => u.startsWith('http://')), urls.join(','));
+    check('scrape: the assets are left out', !urls.some((u) => /\.css$/.test(u)), urls.join(','));
   }
 
   /* ---------------- update check ---------------- */

@@ -271,6 +271,25 @@ curl -X POST $BASE/api/expand -H "Content-Type: application/json" \
   "errors": [{ "line": "nonsense", "error": "Not an http(s) or ftp(s) URL" }] }
 ```
 
+### `POST /api/scrape`
+
+Finds the download links of a web page (the site grabber).
+
+```bash
+curl -X POST $BASE/api/scrape -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/downloads"}'
+```
+
+```json
+{ "ok": true, "url": "https://example.com/downloads", "count": 12,
+  "links": [{ "url": "https://example.com/files/manual.pdf", "ext": "pdf", "likely": true }] }
+```
+
+The links are absolute, de-duplicated and sorted with the likely downloads
+first. Page assets (css, images, scripts) are left out unless
+`{"includeAssets": true}` is sent. A page URL that is not http(s) answers
+`400`, a page that cannot be read answers `502`.
+
 ---
 
 ## Status codes

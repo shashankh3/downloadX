@@ -16,6 +16,9 @@ project uses [semantic versioning](https://semver.org/).
   match, the file is fetched once more automatically before the download is
   reported as damaged.
 - The HTTP client can send a request body now (the `body` option).
+- **A site grabber.** `POST /api/scrape` finds the download links of a page,
+  and the Add dialog has a "Grab links from a page" button that fills the
+  list with them.
 
 ## [1.4.0] - 2026-10-22
 
