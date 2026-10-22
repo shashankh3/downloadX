@@ -1,4 +1,7 @@
 // downloadX FTP support tests — local FTP server, no external network.
+// The local test servers live on 127.0.0.1 - allow the private network in tests.
+process.env.DLX_ALLOW_LOOPBACK_DOWNLOADS = '1';
+
 // Run: node test/ftp.test.mjs
 import net from 'node:net';
 import os from 'node:os';

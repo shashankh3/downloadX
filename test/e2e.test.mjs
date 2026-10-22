@@ -1,5 +1,8 @@
 // downloadX end-to-end test — a fresh app, a real download, a restart.
 // Starts the real server against a temporary data folder.
+// The local test servers live on 127.0.0.1 - allow the private network in tests.
+process.env.DLX_ALLOW_LOOPBACK_DOWNLOADS = '1';
+
 // Run: node test/e2e.test.mjs
 import http from 'node:http';
 import net from 'node:net';

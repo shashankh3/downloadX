@@ -1,4 +1,7 @@
 // downloadX self-contained test suite — no external network, no running server.
+// The local test servers live on 127.0.0.1 - allow the private network in tests.
+process.env.DLX_ALLOW_LOOPBACK_DOWNLOADS = '1';
+
 // Run: node test/self-test.mjs   (or: npm test)
 import http from 'node:http';
 import os from 'node:os';

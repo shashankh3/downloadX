@@ -273,7 +273,13 @@ The server is local-only and hardened against drive-by attacks from websites:
 - JSON bodies are capped at 1 MB and must use `Content-Type: application/json`;
 - category and filename inputs are sanitized (Windows reserved names, path separators,
   control characters);
-- the UI ships a strict CSP and the API responses carry `nosniff` / `DENY` headers.
+- the UI ships a strict CSP and the API responses carry `nosniff` / `DENY` headers;
+- **address guard**: the URL you ask for may live in your private network (a NAS at
+  home), but a redirect, a playlist part or a scraped link that points at `127.0.0.1`, a
+  LAN address or the cloud metadata address (`169.254.169.254`) is refused - a hostile
+  page cannot use downloadX to reach into your network. The FTP client keeps the data
+  connection on the host of the control connection (no PASV bounce). Set
+  `allowPrivateNetworks` in the settings to turn the protection off.
 
 ## How the engine works
 

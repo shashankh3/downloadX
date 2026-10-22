@@ -1,5 +1,8 @@
 // Controlled experiment: range-aware local server + pause/resume + integrity.
 // Runs entirely against a spawned downloadX server — no external network needed.
+// The local test servers live on 127.0.0.1 - allow the private network in tests.
+process.env.DLX_ALLOW_LOOPBACK_DOWNLOADS = '1';
+
 // Run: node test/local-test.mjs   (or: npm run test:local)
 import http from 'node:http';
 import net from 'node:net';

@@ -109,6 +109,7 @@ const child = spawn(process.execPath, ['server.js'], {
     DLX_DATA_DIR: dataDir,
     DLX_EXT_DIR: extDir,
     DLX_NO_OPEN: '1',
+    DLX_ALLOW_LOOPBACK_DOWNLOADS: '1',
   },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -229,6 +230,7 @@ try {
         DLX_DATA_DIR: dataDir,
         DLX_EXT_DIR: extDir,
         DLX_NO_OPEN: '1',
+    DLX_ALLOW_LOOPBACK_DOWNLOADS: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

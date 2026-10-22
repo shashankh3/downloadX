@@ -257,6 +257,28 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   check('origin: ids are normalised', JSON.stringify(normalizeIds(' AA , bb ')) === '["aa","bb"]');
 }
 
+/* ---------------- lib/origin.js: the address guard ---------------- */
+{
+  const { isPrivateOrReservedIp, createSafeLookup } = require('../lib/origin.js');
+  check('guard: IPv4 loopback is private', isPrivateOrReservedIp('127.0.0.1') === true);
+  check('guard: the whole 127/8 block is private', isPrivateOrReservedIp('127.99.1.5') === true);
+  check('guard: 10/8 is private', isPrivateOrReservedIp('10.1.2.3') === true);
+  check('guard: 172.16/12 is private', isPrivateOrReservedIp('172.16.0.1') === true);
+  check('guard: 172.32 is public', isPrivateOrReservedIp('172.32.0.1') === false);
+  check('guard: 192.168/16 is private', isPrivateOrReservedIp('192.168.1.1') === true);
+  check('guard: link local is private (cloud metadata)', isPrivateOrReservedIp('169.254.169.254') === true);
+  check('guard: carrier grade NAT is private', isPrivateOrReservedIp('100.64.0.1') === true);
+  check('guard: a public address is allowed', isPrivateOrReservedIp('93.184.216.34') === false);
+  check('guard: 8.8.8.8 is allowed', isPrivateOrReservedIp('8.8.8.8') === false);
+  check('guard: IPv6 loopback is private', isPrivateOrReservedIp('::1') === true);
+  check('guard: IPv6 unique local is private', isPrivateOrReservedIp('fd00::1') === true);
+  check('guard: IPv6 link local is private', isPrivateOrReservedIp('fe80::1') === true);
+  check('guard: a public IPv6 is allowed', isPrivateOrReservedIp('2606:4700:4700::1111') === false);
+  check('guard: an IPv4 mapped loopback is private', isPrivateOrReservedIp('::ffff:127.0.0.1') === true);
+  check('guard: garbage is not private', isPrivateOrReservedIp('not an ip') === false);
+  check('guard: the lookup exists', typeof createSafeLookup(true) === 'function');
+}
+
 /* ---------------- report ---------------- */
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

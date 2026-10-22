@@ -26,6 +26,14 @@ project uses [semantic versioning](https://semver.org/).
 ## [1.4.0] - 2026-10-22
 
 ### Fixed
+- **A remote document could use downloadX to reach the private network.** A
+  playlist, a redirect or a scraped link that pointed at `127.0.0.1`, a NAS or
+  the cloud metadata address (`169.254.169.254`) is now refused. The URL the
+  user asked for may still live in a private network; every hop below it is
+  checked. `allowPrivateNetworks` turns the protection off.
+- **An FTP server could bounce the data connection** to a different address
+  (the classic PASV bounce attack). The client now asks for EPSV first and
+  always keeps the data connection on the host of the control connection.
 - **The browser extension was broken in Firefox.** Firefox exposes the promise
   based `browser.*` API and treats a second argument as the options object, so
   the callback the content script passed was never called: the floating button

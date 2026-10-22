@@ -1,5 +1,8 @@
 // HLS + DASH media capture tests: playlists, AES-128, byte ranges, fMP4 init maps,
 // DASH templates/timelines, pause/resume of stream downloads. Fully local.
+// The local test servers live on 127.0.0.1 - allow the private network in tests.
+process.env.DLX_ALLOW_LOOPBACK_DOWNLOADS = '1';
+
 // Run: node test/streams.test.mjs
 import { createRequire } from 'node:module';
 import http from 'node:http';

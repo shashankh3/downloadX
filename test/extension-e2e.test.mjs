@@ -1,5 +1,8 @@
 // downloadX extension integration test — the real extension code against the
 // real server. The browser API is mocked, the network is not.
+// The local test servers live on 127.0.0.1 - allow the private network in tests.
+process.env.DLX_ALLOW_LOOPBACK_DOWNLOADS = '1';
+
 // Run: node test/extension-e2e.test.mjs
 import http from 'node:http';
 import fs from 'node:fs';

@@ -1,5 +1,8 @@
 // Network feature tests: proxies (HTTP forward, CONNECT tunnel, SOCKS5), Basic/Digest
 // auth, custom headers, TLS bypass and proxy settings normalization.
+// The local test servers live on 127.0.0.1 - allow the private network in tests.
+process.env.DLX_ALLOW_LOOPBACK_DOWNLOADS = '1';
+
 // Run: node test/net.test.mjs
 import { createRequire } from 'node:module';
 import http from 'node:http';
