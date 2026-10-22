@@ -294,6 +294,26 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   check('sparse: the file is still readable', fs.statSync(file).size === 1024);
 }
 
+/* ---------------- lib/av.js: antivirus and provenance ---------------- */
+{
+  const av = require('../lib/av.js');
+  const file = path.join(TMP, 'scan-me.txt');
+  fs.writeFileSync(file, 'hello');
+  check('av: the scanner lookup does not throw', typeof av.findMpCmdRun() === 'string');
+  const scan = await av.scanFile(file, { timeoutMs: 15000 });
+  check('av: the scan reports whether a scanner exists', typeof scan.available === 'boolean', JSON.stringify(scan));
+  check('av: the scan has a verdict', typeof scan.clean === 'boolean' && typeof scan.threat === 'boolean');
+  const written = av.writeMarkOfTheWeb(file, { hostUrl: 'https://example.com/a.zip', referrerUrl: 'https://example.com/p' });
+  check('av: the mark of the web is written', written === true || written === false, String(written));
+  if (written) {
+    const ads = av.readMarkOfTheWeb(file);
+    check('av: the mark of the web has the zone id', /ZoneId=3/.test(ads), JSON.stringify(ads.slice(0, 60)));
+    check('av: the mark of the web has the host url', /HostUrl=https:\/\/example\.com\/a\.zip/.test(ads));
+  } else {
+    check('av: the mark of the web is not written off Windows', process.platform !== 'win32');
+  }
+}
+
 /* ---------------- report ---------------- */
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

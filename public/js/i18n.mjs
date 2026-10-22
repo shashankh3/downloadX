@@ -117,6 +117,8 @@ export const DICT = {
     'From (HH:MM)': 'Von (HH:MM)',
     'To (HH:MM)': 'Bis (HH:MM)',
     'Retries per download before it is marked as failed': 'Wiederholungen pro Download, bevor er als fehlgeschlagen gilt',
+    'Scan finished downloads with Microsoft Defender': 'Fertige Downloads mit Microsoft Defender prüfen',
+    'Mark downloads as coming from the internet (Windows SmartScreen)': 'Downloads als aus dem Internet kommend markieren (Windows SmartScreen)',
     'Notifications': 'Benachrichtigungen',
     'Notify when downloads finish': 'Benachrichtigen, wenn Downloads fertig sind',
     'Play a sound when downloads finish': 'Ton abspielen, wenn Downloads fertig sind',

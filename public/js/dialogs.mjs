@@ -165,6 +165,8 @@ export function openSettings() {
   $('#set-notify').checked = s.notifications !== false;
   $('#set-notify-sound').checked = s.notificationSound !== false;
   $('#set-maxretries').value = s.maxRetries ?? 12;
+  $('#set-avscan').checked = !!s.avScanEnabled;
+  $('#set-mow').checked = s.writeMarkOfTheWeb !== false;
   $('#dlg-settings').showModal();
   refreshFreeSpace();
 }
@@ -204,6 +206,8 @@ export function initSettingsDialog() {
       notifications: $('#set-notify').checked,
       notificationSound: $('#set-notify-sound').checked,
       maxRetries: parseInt($('#set-maxretries').value, 10) || 12,
+      avScanEnabled: $('#set-avscan').checked,
+      writeMarkOfTheWeb: $('#set-mow').checked,
     };
     try {
       if (body.notifications && typeof Notification !== 'undefined' && Notification.permission === 'default') {
