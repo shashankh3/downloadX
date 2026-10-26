@@ -1,0 +1,14 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.6.0.schema.json
+PackageIdentifier: ShashankH3.DownloadX
+PackageVersion: 1.5.0
+InstallerType: portable
+Commands:
+  - downloadX
+PortableCommandAlias: downloadx
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/shashankh3/downloadX/releases/download/v1.5.0/downloadX.exe
+    InstallerSha256: A488B2611127D598C524E012E680F08A2D45E1E77D31E0B1BBFDA201866BC838
+    InstallerLocale: en-US
+ManifestType: installer
+ManifestVersion: 1.6.0

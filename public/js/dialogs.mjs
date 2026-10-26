@@ -15,6 +15,7 @@ export function openAdd(prefill) {
   $('#add-urls').value = prefill || '';
   $('#add-filename').value = '';
   $('#add-preview').textContent = '';
+  $('#add-grab-hint').textContent = '';
   $('#add-category').value = 'auto';
   const segs = (state && state.settings && state.settings.defaultSegments) || 16;
   $('#add-segments').value = segs;
@@ -30,10 +31,39 @@ export function openAdd(prefill) {
   $('#add-checksum').value = '';
   $('#add-dir').value = '';
   $('#add-paused').checked = false;
+  $('#add-priority').value = '0';
+  $('#add-sched-start').value = '';
+  $('#add-sched-end').value = '';
+  $('#add-sched-days').value = '';
+  fillDependencySelect();
   const adv = dlg.querySelector('details.advanced');
   if (adv) adv.open = false;
   dlg.showModal();
   $('#add-urls').focus();
+}
+
+/** Fill the "wait for" picker with the downloads that are still in flight. */
+function fillDependencySelect() {
+  const sel = $('#add-depends');
+  if (!sel) return;
+  const current = sel.value;
+  sel.textContent = '';
+  const none = el('option', null, 'None');
+  none.value = '';
+  sel.appendChild(none);
+  for (const item of state.items || []) {
+    if (item.status === 'completed' || item.status === 'canceled') continue;
+    const o = el('option', null, item.filename);
+    o.value = item.id;
+    sel.appendChild(o);
+  }
+  if ([...sel.children].some((o) => o.value === current)) sel.value = current;
+}
+
+function parseDays(text) {
+  return [...new Set(String(text || '').split(/[\s,;]+/)
+    .map((d) => parseInt(d, 10))
+    .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))];
 }
 
 let expandTimer = null;
@@ -69,32 +99,10 @@ export function initAddDialog() {
 
   $('#add-segments').addEventListener('input', (e) => { $('#add-segv').textContent = e.target.value; });
 
-  /* Grab the download links of a page and put them into the list. */
-  $('#add-grab').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    const hint = $('#add-grab-hint');
+  /* Open the site grabber with the first URL as the starting page. */
+  $('#add-grab').addEventListener('click', () => {
     const pageUrl = $('#add-urls').value.trim().split(/\r?\n/)[0] || '';
-    if (!/^https?:\/\//i.test(pageUrl)) {
-      hint.textContent = 'Put the page address in the box above first';
-      return;
-    }
-    btn.disabled = true;
-    hint.textContent = 'Looking for links…';
-    try {
-      const r = await api('/api/scrape', { method: 'POST', body: { url: pageUrl } });
-      const urls = (r.links || []).map((l) => l.url);
-      if (!urls.length) {
-        hint.textContent = 'No download links found on that page';
-        return;
-      }
-      $('#add-urls').value = urls.join('\n');
-      hint.textContent = `Found ${urls.length} link${urls.length === 1 ? '' : 's'}`;
-      $('#add-preview').textContent = `Will add ${urls.length} downloads`;
-    } catch (err) {
-      hint.textContent = err.message;
-    } finally {
-      btn.disabled = false;
-    }
+    openGrab(pageUrl);
   });
 
   $('#add-ok').addEventListener('click', async () => {
@@ -116,7 +124,15 @@ export function initAddDialog() {
       expectedChecksum: $('#add-checksum').value.trim() || undefined,
       dir: $('#add-dir').value.trim() || undefined,
       startedPaused: $('#add-paused').checked,
+      priority: parseInt($('#add-priority').value, 10) || 0,
+      dependsOn: $('#add-depends').value || undefined,
     };
+    const schedStart = $('#add-sched-start').value;
+    const schedEnd = $('#add-sched-end').value;
+    const schedDays = parseDays($('#add-sched-days').value);
+    if (schedStart || schedEnd || schedDays.length) {
+      body.schedule = { windowStart: schedStart, windowEnd: schedEnd, days: schedDays, speedLimit: 0 };
+    }
     const btn = $('#add-ok');
     btn.disabled = true;
     try {
@@ -128,6 +144,68 @@ export function initAddDialog() {
   });
 
   $('#add-cancel').addEventListener('click', () => $('#dlg-add').close());
+}
+
+/* ---------------- site grabber ---------------- */
+
+export function openGrab(pageUrl = '') {
+  $('#grab-url').value = pageUrl;
+  $('#grab-depth').value = '0';
+  $('#grab-types').value = '';
+  $('#grab-same').checked = true;
+  $('#grab-media').checked = false;
+  $('#grab-result').textContent = '';
+  $('#grab-result').classList.remove('bad');
+  $('#grab-use').hidden = true;
+  $('#dlg-grab').showModal();
+  if (!pageUrl) $('#grab-url').focus();
+}
+
+export function initGrabDialog() {
+  $('#grab-cancel').addEventListener('click', () => $('#dlg-grab').close());
+  $('#grab-run').addEventListener('click', async () => {
+    const url = $('#grab-url').value.trim();
+    if (!/^https?:\/\//i.test(url)) {
+      $('#grab-result').textContent = 'A page URL is required';
+      $('#grab-result').classList.add('bad');
+      return;
+    }
+    const btn = $('#grab-run');
+    btn.disabled = true;
+    $('#grab-result').classList.remove('bad');
+    $('#grab-result').textContent = 'Looking…';
+    $('#grab-use').hidden = true;
+    try {
+      const r = await api('/api/scrape', {
+        method: 'POST',
+        body: {
+          url,
+          depth: parseInt($('#grab-depth').value, 10) || 0,
+          sameOrigin: $('#grab-same').checked,
+          includeMedia: $('#grab-media').checked,
+          extensions: $('#grab-types').value,
+        },
+      });
+      const urls = (r.links || []).map((l) => l.url);
+      if (!urls.length) {
+        $('#grab-result').textContent = 'No links found';
+        return;
+      }
+      $('#grab-result').textContent = `${urls.length} link${urls.length === 1 ? '' : 's'} · ${r.pages || 1} page${(r.pages || 1) === 1 ? '' : 's'}`;
+      $('#grab-use').hidden = false;
+      $('#grab-use').onclick = () => {
+        $('#add-urls').value = urls.join('\n');
+        $('#add-preview').textContent = `Will add ${urls.length} downloads`;
+        $('#add-grab-hint').textContent = `${urls.length} grabbed`;
+        $('#dlg-grab').close();
+      };
+    } catch (e) {
+      $('#grab-result').textContent = e.message;
+      $('#grab-result').classList.add('bad');
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 /* ---------------- settings dialog ---------------- */
@@ -153,6 +231,7 @@ export function openSettings() {
   $('#set-maxconnections').value = s.maxConnections ?? 64;
   $('#set-segments').value = s.defaultSegments ?? 16;
   $('#set-globallimit').value = s.globalSpeedLimit ? Math.round(s.globalSpeedLimit / 1024) : 0;
+  $('#set-quota').value = s.hourlyQuota ? Math.round(s.hourlyQuota / (1024 * 1024)) : 0;
   $('#set-proxy').value = s.proxy || '';
   $('#set-organize').checked = !!s.organizeByCategory;
   $('#set-invalid-tls').checked = !!s.allowInvalidTls;
@@ -194,6 +273,7 @@ export function initSettingsDialog() {
       maxConnections: Math.max(0, parseInt($('#set-maxconnections').value, 10) || 0),
       defaultSegments: parseInt($('#set-segments').value, 10) || 16,
       globalSpeedLimit: (parseInt($('#set-globallimit').value, 10) || 0) * 1024,
+      hourlyQuota: (parseInt($('#set-quota').value, 10) || 0) * 1024 * 1024,
       proxy: $('#set-proxy').value.trim(),
       organizeByCategory: $('#set-organize').checked,
       allowInvalidTls: $('#set-invalid-tls').checked,
@@ -223,6 +303,11 @@ export function initSettingsDialog() {
     const btn = e.currentTarget;
     btn.disabled = true;
     try {
+      if (window.chrome && window.chrome.webview && typeof window.chrome.webview.postMessage === 'function') {
+        window.chrome.webview.postMessage({ type: 'browser-setup' });
+        toast('Opening browser setup…', 'ok');
+        return;
+      }
       const r = await api('/api/extension/install', { method: 'POST' });
       toast(r.mode === 'store' ? 'Opening the browser add-on store…' : 'Opening the extension folder…', 'ok');
     } catch (err) {
@@ -232,4 +317,34 @@ export function initSettingsDialog() {
     }
   });
   $('#set-refresh-space').addEventListener('click', () => refreshFreeSpace());
+
+  $('#set-export').addEventListener('click', async () => {
+    try {
+      const res = await fetch('/api/downloads/export');
+      if (!res.ok) throw new Error('Export failed');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'downloadx-tasks.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      toast('Download list exported', 'ok');
+    } catch (e) { toast(e.message, 'err'); }
+  });
+
+  $('#set-import').addEventListener('click', () => $('#set-import-file').click());
+  $('#set-import-file').addEventListener('change', async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      const r = await api('/api/downloads/import', { method: 'POST', body: data });
+      const failed = (r.errors || []).length;
+      toast(`Imported ${r.added}${failed ? ` · ${failed} skipped` : ''}`, failed ? 'err' : 'ok');
+      e.target.value = '';
+    } catch (err) {
+      toast(err.message, 'err');
+      e.target.value = '';
+    }
+  });
 }

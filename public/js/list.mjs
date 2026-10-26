@@ -25,7 +25,10 @@ export function updateHeader() {
   $('#st-engine').textContent = busy
     ? t('Transferring — {n} connections', { n: conns })
     : t('Engine ready');
-  $('#st-conn').textContent = conns === 1 ? t('1 connection') : t('{n} connections', { n: conns });
+  // The footer is intentionally just a dot, a pair of counters and a number.
+  const conn = $('#st-conn');
+  conn.textContent = String(conns);
+  conn.title = conns === 1 ? t('1 connection') : t('{n} connections', { n: conns });
 }
 
 function drawSpark() {
@@ -38,8 +41,8 @@ function drawSpark() {
   const max = Math.max(1024, ...speedHistory.map((p) => p.v));
   const t0 = speedHistory[0].t, t1 = Math.max(t0 + 1, speedHistory[speedHistory.length - 1].t);
   const grad = ctx.createLinearGradient(0, 0, w, 0);
-  grad.addColorStop(0, 'rgba(109,124,255,.95)');
-  grad.addColorStop(1, 'rgba(45,211,255,.95)');
+  grad.addColorStop(0, 'rgba(225,29,46,.95)');
+  grad.addColorStop(1, 'rgba(255,77,77,.95)');
   ctx.beginPath();
   speedHistory.forEach((p, i) => {
     const x = ((p.t - t0) / (t1 - t0)) * w;
@@ -50,7 +53,7 @@ function drawSpark() {
   ctx.lineWidth = 1.6;
   ctx.stroke();
   ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
-  ctx.fillStyle = 'rgba(45,211,255,.09)';
+  ctx.fillStyle = 'rgba(225,29,46,.10)';
   ctx.fill();
 }
 
@@ -69,9 +72,12 @@ export function updateCounts() {
     n.textContent = (kind === 'view' ? vc[key] : cc[key]) || 0;
   });
   const shown = filteredItems().length;
-  $('#view-sub').textContent = shown === 1 ? t('1 item') : t('{n} items', { n: shown });
-  $('#st-act').textContent = t('{active} active · {waiting} waiting', { active: state.activeCount || 0, waiting: vc.waiting });
-  $('#st-total').textContent = t('{n} completed', { n: vc.completed });
+  $('#view-sub').textContent = String(shown);
+  const active = state.activeCount || 0;
+  const act = $('#st-act');
+  act.textContent = `${active} · ${vc.waiting}`;
+  act.title = t('{active} active · {waiting} waiting', { active, waiting: vc.waiting });
+  $('#st-total').textContent = String(vc.completed);
   $('#btn-retry-failed').hidden = vc.failed === 0;
   $('#btn-clear').hidden = (vc.completed + vc.failed) === 0;
 }

@@ -900,6 +900,65 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   srvZ.close();
 }
 
+/* ---------------- per task schedule and dependencies ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine30'));
+  engine.settings.rootDir = path.join(TMP, 'files30');
+  engine.settings.maxConcurrent = 2;
+
+  // A download that waits for another one stays queued.
+  const parent = engine.add({ urls: [`${URL_BASE}/blob.bin`], segments: 1, filename: 'parent.bin' });
+  const child = engine.add({
+    urls: [`${URL_BASE}/blob.bin`], segments: 1, filename: 'child.bin', dependsOn: parent.id,
+  });
+  await sleep(1200);
+  check('schedule: a child waits for its parent', child.status === 'queued' && !!child.blockedBy, child.status + ' ' + child.blockedBy);
+  await waitFor(() => parent.status === 'completed', 60000);
+  await waitFor(() => child.status !== 'queued', 30000);
+  check('schedule: the child starts when the parent is done', child.status !== 'queued', child.status);
+
+  // A cycle is refused.
+  let cycleError = null;
+  try {
+    engine.add({ urls: [`${URL_BASE}/blob.bin`], dependsOn: child.id, filename: 'cycle.bin' });
+  } catch (e) { cycleError = e; }
+  const cyclic = engine.items.get(child.id);
+  cyclic.dependsOn = cyclic.id;
+  check('schedule: a loop is refused', !!cycleError || engine._noCycle(child.id) === false,
+    cycleError ? cycleError.message : 'no cycle detected');
+
+  // A window that has not opened yet keeps the download waiting.
+  const now = new Date();
+  const hhmm = (date) => String(date.getHours()).padStart(2, '0') + ':' + String(date.getMinutes()).padStart(2, '0');
+  const from = new Date(now.getTime() + 2 * 60 * 1000);
+  const to = new Date(now.getTime() + 3 * 60 * 1000);
+  const windowed = engine.add({
+    urls: [`${URL_BASE}/blob.bin`], segments: 1, filename: 'windowed.bin',
+    schedule: { windowStart: hhmm(from), windowEnd: hhmm(to), days: [from.getDay()] },
+  });
+  await sleep(1200);
+  check('schedule: a window that has not opened keeps the download waiting', windowed.status === 'queued', windowed.status);
+  engine.close();
+}
+
+/* ---------------- hourly quota ---------------- */
+{
+  const engine = new Engine(path.join(TMP, 'engine31'));
+  engine.settings.hourlyQuota = 1000;
+  engine.recordTraffic(400);
+  check('quota: traffic is counted', engine._quotaUsed === 400, String(engine._quotaUsed));
+  engine.recordTraffic(700);
+  engine._checkQuota();
+  check('quota: exceeding the limit halts the queue', engine._quotaHalted === true);
+  engine.settings.hourlyQuota = 2000;
+  engine._checkQuota();
+  check('quota: raising the limit resumes the queue', engine._quotaHalted === false);
+  engine._quotaResetAt = Date.now() - 1;
+  engine._checkQuota();
+  check('quota: a new hour resets the counter', engine._quotaUsed === 0, String(engine._quotaUsed));
+  engine.close();
+}
+
 srv.close();
 
 const failed = results.filter((r) => !r.ok);

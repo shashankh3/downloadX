@@ -50,7 +50,7 @@ public/
   app.mjs            entry point
   js/                UI modules (native ES modules, no build step)
   index.html         markup
-  style.css          styles (light + dark theme)
+  style.css          styles (dark red/black theme)
 extension/           browser connector (background, content script, options)
 installer/           Windows installer, CRX3 builder, EXE builder
 scripts/lint.mjs     dependency-free project hygiene checks
@@ -169,6 +169,14 @@ Two token buckets smooth the bandwidth: one global, one per download. The
 connection budget is a semaphore inside the engine: every socket (probe,
 range request, playlist part) holds a slot for the whole transfer.
 
+The scheduler runs on the engine ticker. It applies the global window, each
+download's own window and weekday list, the dependency graph (`dependsOn`,
+with loop detection) and the rolling hourly quota (`hourlyQuota`). A blocked
+child exposes `blockedBy`; a paused item exposes `pausedBy` (`user`,
+`schedule`, `quota`, …). The snapshot includes `scheduleHalted`, `quotaHalted`,
+`quotaUsed`, `quotaLimit` and `quotaResetIn` so the UI can explain why the
+queue is waiting.
+
 ---
 
 ## 6. State on disk
@@ -186,7 +194,10 @@ every 1.5 s and on shutdown:
       "id": "…", "urls": ["https://…"], "filename": "big.iso",
       "status": "downloading", "total": 1234567,
       "segments": [{ "start": 0, "end": 617283, "downloaded": 617284 }],
-      "etag": "\"abc\"", "speedLimit": 0, "priority": 0
+      "etag": "\"abc\"", "speedLimit": 0, "priority": 0,
+      "schedule": { "windowStart": "01:00", "windowEnd": "06:00",
+                    "days": [1, 3, 5], "speedLimit": 0 },
+      "dependsOn": null
     }
   ]
 }
@@ -238,5 +249,7 @@ The server is local-only and hardened against pages in the browser:
 | `test/extension.test.mjs` | the browser connector against a mocked extension API |
 | `test/ui.test.mjs` | the UI modules against a small DOM shim |
 | `test/installer.test.mjs` | CRX3 signing, extension builds, installer dry-run/sandbox |
+| `test/chrome-grab.test.mjs` | a real Chromium attachment grab (optional, needs a browser) |
 
-Everything runs locally: no network access and no browser required.
+Everything except the optional Chrome grab runs locally: no network access and
+no browser required.

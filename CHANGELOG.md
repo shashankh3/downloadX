@@ -6,7 +6,23 @@ project uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-10-27
+
 ### Added
+- **A native desktop app.** `npm run build:desktop` produces a single
+  `dist/desktop/downloadX.exe` that opens the full UI in its own WinForms
+  window through the Edge WebView2 runtime, with a system-tray menu and no
+  browser tab. Closing the window keeps downloads running; the embedded
+  server stops with the app.
+- **Chrome and Edge download grabbing in the desktop app.** The desktop EXE
+  bundles its own extension and native messaging host, registers
+  `com.downloadx.desktop.host` for the Chromium browsers and Firefox under
+  `HKCU`, and explicitly asks to install the browser extension on first run.
+  The extension uses its own ports (9785–9795) so it can coexist with an
+  installed downloadX. Chrome
+  and Edge still require a one-time **Load unpacked** for local extensions; the
+  setup window copies the folder and offers a ready-to-use separate browser
+  profile as well.
 - **A ZIP archive is repaired entry by entry.** When the checksum of a `.zip`
   does not match, the directory of the archive is read and every entry is
   checked against its own CRC-32. Only the damaged entries are downloaded again
@@ -22,12 +38,31 @@ project uses [semantic versioning](https://semver.org/).
   match, the file is fetched once more automatically before the download is
   reported as damaged.
 - The HTTP client can send a request body now (the `body` option).
-- **A site grabber.** `POST /api/scrape` finds the download links of a page,
-  and the Add dialog has a "Grab links from a page" button that fills the
-  list with them.
-- **The interface can be translated.** The language is chosen in the settings
-  and remembered by the browser; English and German ship with the app. The
-  linter reports strings that have no translation yet.
+- **A recursive site grabber.** `POST /api/scrape` follows same-site navigation
+  links up to three hops, filters by file type, and can collect
+  `<video>/<audio>/<source>` URLs plus Open Graph/Twitter media metadata. The
+  Add dialog's "Grab links from a page" button fills the list with the result.
+- **Per-download scheduling and dependencies.** Every download can have its own
+  start/end window, weekdays, speed limit and a parent (`dependsOn`). A child
+  waits until the parent completes; loops are refused. The global scheduler and
+  the queue priority still apply on top.
+- **An hourly traffic quota.** `hourlyQuota` caps bytes in a 60-minute window.
+  The queue pauses when the budget is spent and resumes when the window resets;
+  the live snapshot exposes `quotaUsed`, `quotaLimit`, `quotaResetIn` and
+  `quotaHalted`.
+- **Import and export.** `GET /api/downloads/export` writes a portable JSON task
+  list and `POST /api/downloads/import` adds it back paused, preserving URLs,
+  folders, auth, headers, checksums, priority and schedules.
+- **Refresh a download's address.** `POST /api/downloads/:id/refresh` replaces
+  the source URL and restarts the transfer without losing the list entry.
+- **Antivirus scanning and Mark-of-the-Web.** Finished files can be scanned with
+  Windows Defender before the final rename, and the Windows attachment zone is
+  written so SmartScreen/Office see where the file came from. Both are
+  configurable (`avScanEnabled`, `avTimeoutMs`, `writeMarkOfTheWeb`).
+- **A new dark-only interface.** The UI is restyled after IObit Driver Booster:
+  charcoal/black surfaces, one red accent, icon-first navigation, compact
+  counters and a large red-ring empty state. The old light/dark toggle is gone;
+  the interface ships in English and German and remembers the language.
 
 ## [1.4.0] - 2026-10-22
 

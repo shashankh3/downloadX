@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.defaultLocale.1.6.0.schema.json
+PackageIdentifier: ShashankH3.DownloadX
+PackageVersion: 1.5.0
+PackageLocale: en-US
+Publisher: downloadX
+PublisherUrl: https://github.com/shashankh3/downloadX
+PublisherSupportUrl: https://github.com/shashankh3/downloadX/issues
+PackageName: downloadX
+PackageUrl: https://github.com/shashankh3/downloadX
+License: MIT
+LicenseUrl: https://github.com/shashankh3/downloadX/blob/main/LICENSE
+ShortDescription: Segmented Windows download manager with FTP/FTPS, HLS/DASH capture and browser integration.
+Description: downloadX is a zero-dependency download manager with a local web UI. It supports multi-connection HTTP(S) downloads, FTP/FTPS, mirrors, resume, checksums, speed limits, scheduling, HLS and DASH media capture, proxies, Basic/Digest auth and one-click browser handoff.
+Moniker: downloadx
+Tags:
+  - download-manager
+  - ftp
+  - hls
+  - dash
+  - downloader
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

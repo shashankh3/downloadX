@@ -20,7 +20,7 @@ BASE=http://127.0.0.1:9765
 ### `GET /api/health`
 
 ```json
-{ "ok": true, "instance": "0f3c…", "version": "1.4.0", "uptime": 42,
+{ "ok": true, "instance": "0f3c…", "version": "1.5.0", "uptime": 42,
   "pid": 8123, "platform": "win32", "node": "v24.0.0" }
 ```
 
@@ -40,6 +40,10 @@ same payload the live feed sends.
   "activeConnections": 8,
   "connectionLimit": 64,
   "scheduleHalted": false,
+  "quotaHalted": false,
+  "quotaUsed": 1048576,
+  "quotaLimit": 0,
+  "quotaResetIn": 3599,
   "shutdownArmed": false,
   "shutdownIn": 0
 }
@@ -61,7 +65,7 @@ Reads the update manifest configured in `updateUrl`. The result is cached for
 six hours.
 
 ```json
-{ "ok": true, "configured": true, "current": "1.4.0", "latest": "1.5.0",
+{ "ok": true, "configured": true, "current": "1.5.0", "latest": "1.6.0",
   "updateAvailable": true, "url": "https://…/downloadX.exe", "notes": "…",
   "checkedAt": 1700000000000 }
 ```
@@ -109,6 +113,8 @@ Adds one or more downloads. `201` on success, `400` on a bad request.
 | `checksumAlgo` | string | `sha256`, `sha1`, `md5` or `sha512` |
 | `priority` | number | -100 … 100, higher starts first |
 | `startedPaused` | boolean | Queue the download without starting it |
+| `schedule` | object | Per-download window: `{windowStart, windowEnd, days, speedLimit}` |
+| `dependsOn` | string | Id of a download that must complete first |
 
 ```bash
 curl -X POST $BASE/api/downloads -H "Content-Type: application/json" \
@@ -142,6 +148,58 @@ DELETE /api/downloads/<id>          # only the list entry
 DELETE /api/downloads/<id>?file=1   # and the files
 ```
 
+### `GET /api/downloads/export`
+
+Exports every download as a portable JSON file (`downloadx-tasks.json`). The
+response carries `Content-Disposition: attachment` and contains no runtime
+segment data, so it can be imported on another machine.
+
+```json
+{
+  "app": "downloadX",
+  "version": 2,
+  "exportedAt": 1793036588660,
+  "items": [
+    {
+      "urls": ["https://example.com/file.zip"],
+      "filename": "file.zip",
+      "category": "Compressed",
+      "dir": "",
+      "referer": "",
+      "cookies": "",
+      "headers": {},
+      "username": "",
+      "password": "",
+      "proxy": "",
+      "speedLimit": 0,
+      "segmentsWanted": 16,
+      "priority": 0,
+      "expectedChecksum": "",
+      "checksumAlgo": "sha256",
+      "schedule": null,
+      "dependsOn": null,
+      "addedAt": 1793036000000
+    }
+  ]
+}
+```
+
+### `POST /api/downloads/import`
+
+Imports a file produced by the export endpoint (or an array of records / bare
+URL strings). Imported downloads are paused unless `startNow` is `true`.
+Dependencies are not carried over because ids change; re-link them from the
+details panel.
+
+```bash
+curl -X POST $BASE/api/downloads/import -H "Content-Type: application/json" \
+  --data-binary @downloadx-tasks.json
+```
+
+```json
+{ "added": 1, "items": [ { "id": "…", "status": "paused", … } ], "errors": [] }
+```
+
 ### `POST /api/downloads/:id/<action>`
 
 | Action | Body | Effect |
@@ -154,6 +212,8 @@ DELETE /api/downloads/<id>?file=1   # and the files
 | `priority` | `{"value": 10}` | Sets the priority (-100 … 100) |
 | `limit` | `{"kbs": 500}` | Sets the speed limit (0 = none) |
 | `segments` | `{"value": 32}` | Sets the connection count (only while paused) |
+| `refresh` | `{"url": "https://…"}` | Replaces the source URL and restarts the download |
+| `schedule` | `{"schedule": {...}, "dependsOn": "id"}` | Sets the per-download window and parent; `schedule: null` clears it |
 | `quality` | `{"index": 0}` | Picks another quality of a stream (the file is downloaded again) |
 | `verify` | `{"algo": "sha256", "expected": "…"}` | Verifies the checksum now |
 | `zip-entries` | – | Lists the entries of a finished ZIP archive |
@@ -213,6 +273,11 @@ validated and clamped.
 | `updateUrl` | string | none |
 | `maxRetries` | number 1-100 | 12 |
 | `webhookUrl` | string | none |
+| `allowPrivateNetworks` | boolean | false |
+| `hourlyQuota` | bytes | 0 (unlimited) |
+| `avScanEnabled` | boolean | false |
+| `avTimeoutMs` | number 1000-1800000 | 120000 |
+| `writeMarkOfTheWeb` | boolean | true |
 
 ```bash
 curl -X PUT $BASE/api/settings -H "Content-Type: application/json" \
@@ -243,6 +308,25 @@ webhook never affects a download.
 ### `POST /api/cancel-shutdown`
 
 Aborts a pending "shut down when everything is finished".
+
+### `GET /api/extension/info`
+
+Reports the prepared browser extension without opening anything:
+
+```json
+{
+  "ok": true,
+  "mode": "manual",
+  "folder": "C:\\…\\extension",
+  "chromeFolder": "C:\\…\\extension\\chrome",
+  "firefoxFolder": "C:\\…\\extension\\firefox",
+  "chromeStoreId": "",
+  "edgeStoreId": "",
+  "firefoxAddonId": "downloadx@local",
+  "crx": false,
+  "updates": false
+}
+```
 
 ### `POST /api/extension/install`
 
@@ -275,22 +359,34 @@ curl -X POST $BASE/api/expand -H "Content-Type: application/json" \
 
 ### `POST /api/scrape`
 
-Finds the download links of a web page (the site grabber).
+Finds the download links of a web page (the recursive site grabber).
 
 ```bash
 curl -X POST $BASE/api/scrape -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/downloads"}'
+  -d '{"url":"https://example.com/downloads","depth":2,"includeMedia":true,"extensions":"zip,exe,pdf"}'
 ```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `url` | string | http(s) page to start from |
+| `depth` | number 0-3 | Follow same-site navigation links this many hops (default 0) |
+| `sameOrigin` | boolean | Keep crawled pages on the starting origin (default true) |
+| `includeAssets` | boolean | Include css, images and scripts (default false) |
+| `includeMedia` | boolean | Include `<video>/<audio>/<source>` and Open Graph/Twitter media (default false) |
+| `extensions` | string / string[] | Only return these file types, e.g. `"zip,exe"` |
+| `maxPages` | number 1-50 | Crawl limit (default 10 when `depth` > 0, otherwise 1) |
+| `maxLinks` | number 1-5000 | Result limit (default 2000) |
 
 ```json
 { "ok": true, "url": "https://example.com/downloads", "count": 12,
-  "links": [{ "url": "https://example.com/files/manual.pdf", "ext": "pdf", "likely": true }] }
+  "links": [{ "url": "https://example.com/files/manual.pdf", "ext": "pdf", "likely": true }],
+  "pages": 3, "errors": [], "skipped": 4 }
 ```
 
 The links are absolute, de-duplicated and sorted with the likely downloads
-first. Page assets (css, images, scripts) are left out unless
-`{"includeAssets": true}` is sent. A page URL that is not http(s) answers
-`400`, a page that cannot be read answers `502`.
+first. Private-network links are filtered on every hop. A page URL that is not
+http(s) answers `400`, a page that cannot be read answers `502`; individual
+crawl errors are listed in `errors`.
 
 ---
 

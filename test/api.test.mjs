@@ -58,6 +58,22 @@ const fileServer = http.createServer((req, res) => {
       '</body></html>',
     ].join(''));
   }
+  if (req.url === '/site') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end([
+      '<html><head>',
+      '<meta property="og:video" content="/media/stream.m3u8">',
+      '</head><body>',
+      '<a href="/site/next.html">next</a>',
+      '<a href="/files/manual.pdf">manual</a>',
+      '<video src="/media/clip.mp4"></video>',
+      '</body></html>',
+    ].join(''));
+  }
+  if (req.url === '/site/next.html') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end('<html><body><a href="/files/setup.exe">setup</a></body></html>');
+  }
   const m = /bytes=(\d+)-(\d*)/.exec(req.headers.range || '');
   let start = 0, end = BLOB.length - 1;
   if (m) {
@@ -206,6 +222,11 @@ try {
     check('ext: updates.xml served', xml.status === 200 && xml.body.includes('<gupdate') && String(xml.headers['content-type']).startsWith('text/xml'));
     const crx = await rawRequest(port, { path: '/ext/downloadx.crx' });
     check('ext: crx served', crx.status === 200 && crx.headers['content-type'] === 'application/x-chrome-extension' && crx.body.length > 0);
+    const info = await api('/api/extension/info');
+    check('ext: info endpoint',
+      info.status === 200 && info.json.ok === true && info.json.folder === extDir &&
+      info.json.chromeFolder === path.join(extDir, 'chrome') &&
+      info.json.firefoxFolder === path.join(extDir, 'firefox'));
     const install = await api('/api/extension/install', { method: 'POST', body: {} });
     check('ext: install endpoint', install.status === 200 && install.json.ok === true && install.json.mode === 'folder' && install.json.folder === extDir);
     const portFile = path.join(dataDir, 'port');
@@ -380,6 +401,76 @@ try {
     check('scrape: the links of a page are found', page.status === 200 && urls.length === 2, JSON.stringify(urls));
     check('scrape: the links are absolute', urls.every((u) => u.startsWith('http://')), urls.join(','));
     check('scrape: the assets are left out', !urls.some((u) => /\.css$/.test(u)), urls.join(','));
+
+    const deep = await api('/api/scrape', { method: 'POST', body: { url: `${fileBase}/site`, depth: 1 } });
+    const deepUrls = (deep.json.links || []).map((l) => l.url);
+    check('scrape: recursive pages are followed',
+      deep.status === 200 && deepUrls.some((u) => /\/files\/manual\.pdf$/.test(u)) && deepUrls.some((u) => /\/files\/setup\.exe$/.test(u)),
+      JSON.stringify(deepUrls));
+    check('scrape: navigation pages are not returned', !deepUrls.some((u) => /next\.html$/.test(u)), JSON.stringify(deepUrls));
+
+    const media = await api('/api/scrape', { method: 'POST', body: { url: `${fileBase}/site`, includeMedia: true } });
+    const mediaUrls = (media.json.links || []).map((l) => l.url);
+    check('scrape: media links are found',
+      mediaUrls.some((u) => /\/media\/clip\.mp4$/.test(u)) && mediaUrls.some((u) => /\/media\/stream\.m3u8$/.test(u)),
+      JSON.stringify(mediaUrls));
+
+    const filtered = await api('/api/scrape', { method: 'POST', body: { url: `${fileBase}/site`, depth: 1, extensions: 'exe' } });
+    const filteredUrls = (filtered.json.links || []).map((l) => l.url);
+    check('scrape: file type filter works',
+      filtered.status === 200 && filteredUrls.length === 1 && /\/files\/setup\.exe$/.test(filteredUrls[0]),
+      JSON.stringify(filteredUrls));
+  }
+
+  /* ---------------- import / export / refresh ---------------- */
+  {
+    const dir = path.join(TMP, 'files');
+    const add = await api('/api/downloads', {
+      method: 'POST',
+      body: {
+        url: `${fileBase}/export.bin`,
+        filename: 'export-test.bin',
+        startedPaused: true,
+        dir,
+        priority: 5,
+        schedule: { windowStart: '01:00', windowEnd: '02:00', days: [1, 3], speedLimit: 4096 },
+      },
+    });
+    check('export: a paused download was created', add.status === 201 && add.json.status === 'paused', JSON.stringify(add.json));
+
+    const exp = await api('/api/downloads/export');
+    const exported = (exp.json && exp.json.items || []).find((i) => i.filename === 'export-test.bin');
+    check('export: list is served as an attachment',
+      exp.status === 200 && /attachment/.test(exp.headers['content-disposition'] || '') && !!exported,
+      exp.headers['content-disposition']);
+    check('export: schedule and priority survive',
+      !!exported && exported.priority === 5 && exported.schedule && exported.schedule.days.length === 2 && exported.schedule.speedLimit === 4096,
+      JSON.stringify(exported && exported.schedule));
+
+    const imported = await api('/api/downloads/import', {
+      method: 'POST',
+      body: { items: [{ urls: [`${fileBase}/imported.bin`], filename: 'imported.bin', priority: 2 }] },
+    });
+    check('import: adds a paused download',
+      imported.status === 201 && imported.json.added === 1 && imported.json.items[0].status === 'paused',
+      JSON.stringify(imported.json));
+    check('import: imported priority is kept', imported.json.items[0].priority === 2, String(imported.json.items[0].priority));
+
+    const refresh = await api(`/api/downloads/${add.json.id}/refresh`, {
+      method: 'POST',
+      body: { url: `${fileBase}/refreshed.bin` },
+    });
+    check('refresh: download address is replaced',
+      refresh.status === 200 && refresh.json.url === `${fileBase}/refreshed.bin`,
+      JSON.stringify(refresh.json && refresh.json.url));
+    const badRefresh = await api(`/api/downloads/${add.json.id}/refresh`, {
+      method: 'POST',
+      body: { url: 'not a url' },
+    });
+    check('refresh: invalid address is rejected', badRefresh.status === 400, String(badRefresh.status));
+
+    await api(`/api/downloads/${add.json.id}`, { method: 'DELETE' });
+    await api(`/api/downloads/${imported.json.items[0].id}`, { method: 'DELETE' });
   }
 
   /* ---------------- update check ---------------- */

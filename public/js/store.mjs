@@ -35,7 +35,7 @@ export const speedHistory = [];
 export const prevStatus = new Map();
 
 export const STATUS_LABEL = {
-  queued: 'Waiting', probing: 'Checking…', downloading: 'Downloading',
+  queued: 'Waiting', probing: 'Checking', downloading: 'Active',
   paused: 'Paused', completed: 'Done', failed: 'Failed', canceled: 'Canceled',
 };
 

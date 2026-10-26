@@ -84,7 +84,10 @@ async function checkForUpdate() {
 }
 const HOST = process.env.DLX_HOST || '127.0.0.1';
 const PORT = parseInt(process.env.DLX_PORT, 10) || 9765;
-const MAX_PORT_TRIES = process.env.DLX_PORT ? 0 : 10;
+const PORT_TRIES = process.env.DLX_PORT_TRIES !== undefined
+  ? Math.max(0, parseInt(process.env.DLX_PORT_TRIES, 10) || 0)
+  : null;
+const MAX_PORT_TRIES = PORT_TRIES !== null ? PORT_TRIES : (process.env.DLX_PORT ? 0 : 10);
 const INSTANCE_ID = crypto.randomUUID();
 const IS_PKG = !!process.pkg;
 const ROOT = __dirname;
@@ -383,6 +386,25 @@ process.on('unhandledRejection', (e) => {
 process.on('exit', () => {
   if (instanceLock) instanceLock.release();
 });
+
+/*
+ * The desktop window starts this server as a child process. If the window is
+ * killed instead of exiting cleanly, take the server down too so it cannot
+ * linger in the background. A normal exit uses /api/quit and never reaches the
+ * ESRCH branch.
+ */
+if (process.env.DLX_PARENT_WATCH === '1') {
+  const parent = process.ppid;
+  if (parent > 0) {
+    setInterval(() => {
+      try {
+        process.kill(parent, 0);
+      } catch (e) {
+        if (e.code === 'ESRCH') shutdown(0);
+      }
+    }, 5000).unref();
+  }
+}
 
 async function start() {
   const lock = new InstanceLock({ dataDir: DATA_DIR, host: HOST, port: PORT, instance: INSTANCE_ID });

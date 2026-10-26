@@ -41,7 +41,7 @@ globalThis.EventSource = class {
   close() {}
 };
 globalThis.fetch = async () => ({
-  ok: true, status: 200, json: async () => ({ ok: true, version: '1.4.0' }),
+  ok: true, status: 200, json: async () => ({ ok: true, version: '1.5.0' }),
 });
 
 /* ---------------- import the UI modules ---------------- */
@@ -113,7 +113,7 @@ applySnapshot(snapshot);
 
 check('ui: snapshot renders without throwing', true);
 check('ui: speed shown', byId.get('global-speed').textContent === '1 KB', byId.get('global-speed').textContent);
-check('ui: connection count shown', byId.get('st-conn').textContent === '4 connections', byId.get('st-conn').textContent);
+check('ui: connection count shown', byId.get('st-conn').textContent === '4', byId.get('st-conn').textContent);
 check('ui: filtered items respect the view', filteredItems().length === 2);
 
 const list = byId.get('list');
@@ -124,11 +124,21 @@ check('ui: row shows the file name', row.querySelector('.rname').textContent ===
 check('ui: details panel is hidden by default', row.children[1].style.display === 'none');
 
 /* the details panel needs querySelector support — drive it through the module */
-check('ui: counts updated', byId.get('st-total').textContent === '1 completed', byId.get('st-total').textContent);
-check('ui: waiting counter', byId.get('st-act').textContent === '1 active · 0 waiting', byId.get('st-act').textContent);
+check('ui: counts updated', byId.get('st-total').textContent === '1', byId.get('st-total').textContent);
+check('ui: waiting counter', byId.get('st-act').textContent === '1 · 0', byId.get('st-act').textContent);
 
 /* ---------------- filter behaviour ---------------- */
 const { ui } = await import('../public/js/store.mjs');
+ui.expanded.add('a');
+renderList();
+const expanded = list.children[0].children[1];
+check('ui: expanded details render', expanded.children.length > 0, `${expanded.children.length} detail nodes`);
+check('ui: expanded details include schedule and priority',
+  !!expanded.querySelector('.days') && expanded.querySelectorAll('.checksum-form').length >= 2,
+  `${expanded.querySelectorAll('.checksum-form').length} forms`);
+ui.expanded.delete('a');
+renderList();
+
 ui.view = 'completed';
 check('ui: view filter narrows the list', filteredItems().length === 1 && filteredItems()[0].id === 'b');
 ui.view = 'all';

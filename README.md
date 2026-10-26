@@ -1,8 +1,9 @@
 # downloadX ⚡
 
 A fast, modern, **zero-dependency** download manager for Windows (works anywhere Node.js runs).
-No ads, no nags — run it portably with one command, or use the Windows installer for an
-IDM-style setup with shortcuts, autostart and automatic browser integration.
+No ads, no nags — run it portably with one command, use the Windows installer for an
+IDM-style setup with shortcuts, autostart and automatic browser integration, or double-click
+the desktop EXE for a native window with no browser involved.
 
 ```
 node server.js        →  http://127.0.0.1:9765
@@ -31,7 +32,12 @@ playable file (TS/fMP4, AES-128 decryption included).
 | Checksum verification (SHA-256/1/512, MD5) | ✅ auto-verify + on-demand | ❌ | ❌ | rare |
 | Per-download **and** global speed limits | ✅ | global only | ✅ | mixed |
 | Category auto-sort into folders | ✅ | ✅ | ✅ | ✅ |
-| Scheduler window (e.g. only 23:00–07:00) | ✅ | ✅ | ❌ | rare |
+| Scheduler window (e.g. only 23:00–07:00) | ✅ global + per-download windows and days | ✅ | ❌ | rare |
+| Download dependencies (start B after A) | ✅ per download | ❌ | ❌ | ❌ |
+| Queue priority | ✅ -100…100 | ✅ | ✅ | mixed |
+| Hourly traffic quota | ✅ 60-minute budget with automatic pause/resume | ✅ | ❌ | rare |
+| Recursive site grabber + media extraction | ✅ depth 0–3, same-site, type filter, HLS/DASH/meta | ✅ | ❌ | ❌ |
+| Import / export task list | ✅ JSON | ✅ | ❌ | rare |
 | Shutdown PC when queue empties | ✅ with cancel countdown | ✅ | ❌ | rare |
 | Browser integration | ✅ Chrome/Edge/Firefox MV3 extension + installer auto-setup | ✅ | ✅ | mixed |
 | **Full REST API** + SSE live feed | ✅ script anything | ❌ | ❌ | aria2 only |
@@ -43,6 +49,29 @@ playable file (TS/fMP4, AES-128 decryption included).
 | Free space check before a download starts | ✅ | ❌ | ❌ | ❌ |
 | Price | **free forever** | $25 + nags | free w/ limits | free w/ ads |
 | Portable | ✅ single folder, zero deps, state in `/data` | ❌ installer | ❌ installer | mixed |
+
+### IDM parity notes
+
+This build covers the core IDM workflow: segmented transfers, browser
+interception, media capture, mirrors, checksums, queues, priorities, per-task
+schedules and dependencies, traffic quotas, recursive site grabbing, task
+import/export and a native desktop window.
+
+A few IDM features are deliberately **not** claimed:
+
+- **Site-specific video extractors** (YouTube, Vimeo, social networks). These
+  need a separate extractor such as `yt-dlp`; the built-in grabber handles HLS,
+  DASH and ordinary media URLs.
+- **NTLM, Negotiate and Kerberos authentication.** Basic and Digest auth are
+  supported per download; corporate single-sign-on needs a platform HTTP stack.
+- **System-wide download interception outside the browser.** The extension
+  covers Chrome, Edge, Brave, Chromium and Firefox; other applications are not
+  hooked.
+- **Named multiple queues and a full skin/interface editor.** downloadX has one
+  global queue with per-task scheduling and priority; the UI is dark-only.
+- **Silent local Chrome/Edge extension installation.** Stock Windows requires a
+  store listing or an enterprise policy. The desktop app prepares everything
+  and guides the one-time **Load unpacked** step instead.
 
 ## Quick start
 
@@ -80,15 +109,51 @@ browser extension is unpacked to `extension\` beside it, so the whole thing stay
 The same environment variables work (`DLX_PORT`, `DLX_DATA_DIR`, `DLX_EXT_DIR`, `DLX_OPEN=1`
 is implied for the EXE, set `DLX_NO_OPEN=1` to suppress it).
 
-The UI opens at **http://127.0.0.1:9765**. Files land in your `Downloads` folder,
+**Desktop app** (its own native window — not a browser tab):
+
+```bat
+npm run build:desktop      (produces dist\desktop\downloadX.exe, ~90 MB)
+```
+
+Double-click `dist\desktop\downloadX.exe`. It is a single file that embeds the download
+engine and the WebView2 host; on first start it unpacks the engine to
+`%LOCALAPPDATA%\downloadX\app\<version>-<buildId>` and shows the full UI in a real WinForms
+window. Closing the window keeps downloads running in the notification area (system tray) —
+right-click the tray icon for **Open**, **Pause all**, **Resume all**, **Browser
+integration...**, **Open downloads**, **Open data folder** and **Exit**. Starting the EXE
+again just brings the running window back. `downloadX.exe --quit` stops it cleanly.
+
+**Chrome and Edge downloads.** The desktop app ships with its own browser extension and
+native helper. First start extracts the extension to
+`%LOCALAPPDATA%\downloadX\browser\extension` and registers
+`com.downloadx.desktop.host` for Chrome, Edge, Brave, Chromium and Firefox under `HKCU`.
+On first run it explicitly asks to install the browser extension and opens the setup
+window; the same window is always available from the tray
+(**Browser integration...**) or from Settings → **Install browser extension**. Chrome and
+Edge do not allow a local unpacked extension to install silently on stock Windows, so the
+final step is a one-time **Load unpacked** (the extension folder is copied to the
+clipboard for you). The **Open with downloadX** button starts a separate browser profile
+with the extension already loaded, so you can try interception immediately. The desktop
+extension uses its own ports (9785–9795) and native-host name, so it can run alongside the
+installed downloadX app without conflicts.
+
+Downloads and settings live in a `data\` folder next to the desktop EXE when that location
+is writable, otherwise in `%LOCALAPPDATA%\downloadX\data`. The desktop app starts its
+private server on ports **9785–9795** with `DLX_OPEN=0` and `DLX_PARENT_WATCH=1`, so
+closing the app also shuts the server down. It requires **Microsoft Edge WebView2
+Runtime** — included with Windows 11 and
+normally present on Windows 10; if it is missing the app shows a download link. The EXE is
+unsigned, so SmartScreen may ask for confirmation the first time.
+
+The server and portable builds open the UI at **http://127.0.0.1:9765**. Files land in your `Downloads` folder,
 sorted into `Programs / Compressed / Video / Music / Documents / Images` (configurable).
 
 Paste a URL anywhere on the page (Ctrl+V), or drop a link onto the window, to open the
-Add dialog pre-filled. The interface ships in **English and German** — pick the
-language in the settings, it is remembered by the browser. The interface ships with a
-clean light theme by default; the moon/sun button in the sidebar footer switches to a
-dark theme with a Driver Booster-style navy-and-blue look, and your choice is
-remembered.
+Add dialog pre-filled. The interface is **dark-only**, with charcoal/black surfaces and a
+single red accent in the style of IObit Driver Booster. Navigation, categories and row
+actions are icon-first, the empty state is one large red add ring, and the status bar only
+shows a dot and two counters. The interface ships in **English and German** — pick the
+language in the settings, it is remembered by the browser.
 
 Keyboard shortcuts: `Ctrl+F` search, `Ctrl+N` new download, `Ctrl+K` focus the list,
 `Enter`/`Space` expand a row, `?` shows the full list, `Esc` closes a dialog.
@@ -98,6 +163,7 @@ Keyboard shortcuts: `Ctrl+F` search, `Ctrl+N` new download, `Ctrl+K` focus the l
 | Variable | Default | Purpose |
 |---|---|---|
 | `DLX_PORT` | `9765` | HTTP port (if unset, the next free port is tried automatically) |
+| `DLX_PORT_TRIES` | `0` when `DLX_PORT` is set, otherwise `10` | How many extra ports to try when the first one is busy |
 | `DLX_HOST` | `127.0.0.1` | Bind address |
 | `DLX_DATA_DIR` | `./data` | Where `state.json` lives |
 | `DLX_DEBUG` | unset | Log every HTTP range request |
@@ -106,6 +172,7 @@ Keyboard shortcuts: `Ctrl+F` search, `Ctrl+N` new download, `Ctrl+K` focus the l
 | `DLX_EXT_CONFIG` | `./installer/config.json` | Extension mode / store IDs for the in-app install button |
 | `DLX_EXTENSION_IDS` | unset | Comma separated browser-extension ids that may call the API |
 | `DLX_NO_OPEN` | unset | Set to `1` to stop the server from launching Explorer/browsers |
+| `DLX_PARENT_WATCH` | unset | Set to `1` so the server exits when its parent process (the desktop app) exits |
 
 ### Which pages may reach the API
 
@@ -236,8 +303,16 @@ curl -X POST http://127.0.0.1:9765/api/downloads/<id>/limit \
   -H "Content-Type: application/json" -d '{"kbs":500}'
 curl -X POST http://127.0.0.1:9765/api/downloads/<id>/priority \
   -H "Content-Type: application/json" -d '{"value":10}'
+curl -X POST http://127.0.0.1:9765/api/downloads/<id>/schedule \
+  -H "Content-Type: application/json" \
+  -d '{"schedule":{"windowStart":"01:00","windowEnd":"06:00","days":[1,3,5],"speedLimit":0},"dependsOn":"<parent-id>"}'
+curl -X POST http://127.0.0.1:9765/api/downloads/<id>/refresh \
+  -H "Content-Type: application/json" -d '{"url":"https://example.com/new-file.zip"}'
 curl -X POST http://127.0.0.1:9765/api/downloads/<id>/segments \
   -H "Content-Type: application/json" -d '{"value":32}'
+curl http://127.0.0.1:9765/api/downloads/export > downloadx-tasks.json
+curl -X POST http://127.0.0.1:9765/api/downloads/import \
+  -H "Content-Type: application/json" --data-binary @downloadx-tasks.json
 curl -X DELETE "http://127.0.0.1:9765/api/downloads/<id>?file=1"
 curl -X POST http://127.0.0.1:9765/api/pause-all
 curl -X POST http://127.0.0.1:9765/api/resume-all
@@ -247,6 +322,9 @@ curl -X POST http://127.0.0.1:9765/api/clear-finished \
 curl -X POST http://127.0.0.1:9765/api/cancel-shutdown
 curl -X POST http://127.0.0.1:9765/api/expand \
   -H "Content-Type: application/json" -d '{"text":"https://x/f[01-03].zip"}'
+curl -X POST http://127.0.0.1:9765/api/scrape \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/downloads","depth":2,"includeMedia":true,"extensions":"zip,exe,pdf"}'
 curl -N http://127.0.0.1:9765/api/events                    # live SSE stream
 curl http://127.0.0.1:9765/api/update-check                 # optional update manifest
 ```
@@ -254,11 +332,14 @@ curl http://127.0.0.1:9765/api/update-check                 # optional update ma
 `POST /api/downloads` accepts `url`, `urls`, or `text` (pattern-expanded), plus
 `filename`, `category`, `segments`, `speedLimitKBs`, `mirrors`, `referer`, `cookies`,
 `headers` (object), `username`, `password`, `proxy`, `dir`, `expectedChecksum`,
-`checksumAlgo`, `priority` and `startedPaused`. Multi-URL requests create one download
-per URL and ignore `filename`. Mirrors are de-duplicated against the primary URL.
+`checksumAlgo`, `priority`, `startedPaused`, `schedule` and `dependsOn`. Multi-URL
+requests create one download per URL and ignore `filename`. Mirrors are de-duplicated
+against the primary URL. `schedule` is `{windowStart, windowEnd, days, speedLimit}` with
+`days` as 0–6 (Sunday–Saturday); `dependsOn` is the id of a download that must finish
+first.
 
 `GET /api/update-check` is unconfigured by default. Set `updateUrl` in settings to an
-HTTPS JSON manifest such as `{"version":"1.4.0","url":"https://…/downloadX.exe","notes":"…"}`;
+HTTPS JSON manifest such as `{"version":"1.5.0","url":"https://…/downloadX.exe","notes":"…"}`;
 the UI shows a dismissible banner when the manifest advertises a newer version. Results are
 cached for 6 h and the check honours the global proxy/TLS settings.
 
@@ -334,8 +415,21 @@ The server is local-only and hardened against drive-by attacks from websites:
   automatically on completion and can be re-run from the UI or API.
 - **Limits** — a token bucket per download plus a global one smooth bandwidth across
   all connections instead of letting one transfer hog the pipe.
-- **Scheduler** — downloads can be restricted to a daily window; leaving the window
-  pauses them (`pausedBy: schedule`) and re-entering resumes them.
+- **Scheduler and dependencies** — the global window restricts the whole queue, and each
+  download can also have its own window, days, speed limit and a parent (`dependsOn`).
+  Leaving a window pauses the download (`pausedBy: schedule`) and re-entering resumes it;
+  a child waits in `blockedBy` until its parent completes, and dependency loops are
+  refused before they reach the queue.
+- **Hourly quota** — `hourlyQuota` (bytes, set in MB in the UI) caps traffic in a
+  60-minute window. The engine pauses the queue when the budget is used, resumes it after
+  the window resets, and reports `quotaUsed`, `quotaLimit`, `quotaResetIn` and
+  `quotaHalted` in the snapshot.
+- **Site grabber** — the recursive scraper follows same-site navigation links up to depth
+  3, filters by extension, and can collect `<video>/<audio>/<source>` URLs plus Open Graph
+  and Twitter media metadata. Private-network links are filtered on every hop.
+- **Import / export** — the task list is exported as JSON and imported back paused, keeping
+  URLs, filenames, categories, folders, auth, headers, checksums, priority and schedules.
+  Dependencies are intentionally not carried across files because ids change.
 - **Power** — with *shutdown when done* enabled, the machine is shut down 60 s after the
   last active download completes; a banner with a live countdown and a cancel button
   appears in the UI.
@@ -371,6 +465,8 @@ public/js/         UI modules: state, rendering, dialogs, API client, helpers
 extension/         Chrome/Edge/Firefox MV3 connector (background, content UI, options)
 installer/         Windows installer, CRX3 builder, extension preparation
 installer/build-exe.mjs  standalone EXE builder (pkg + icon/version resources + signing)
+installer/build-desktop.mjs  native-window EXE builder (WinForms + WebView2 host)
+desktop/           native window, tray, browser setup + native-host registration
 installer/make-packages.mjs  winget + Chocolatey manifests with the real SHA-256
 packaging/         generated winget/choco manifests (npm run package:manifests)
 scripts/lint.mjs   dependency-free project hygiene checks (npm run lint)
@@ -378,6 +474,7 @@ native/host.cs     native messaging host (compiled by the installer)
 test/              self-contained test suites + benchmark
 data/              runtime state (created on first run)
 dist/              build output: downloadX.exe, downloadX.ico (npm run build:exe)
+dist/desktop/      downloadX.exe native-window app + README.txt (npm run build:desktop)
 ```
 
 ## Tests
@@ -396,6 +493,7 @@ npm run test:net         # HTTP/SOCKS5 proxies, Basic/Digest auth, custom header
 npm run test:streams     # local HLS/DASH servers: AES-128, fMP4, byte ranges, resume
 npm run test:ftp         # local FTP server: ranged REST transfers, auth, fallbacks
 npm run test:extension   # connector + sniffer + rules + content/options files (mocked)
+npm run test:chrome-grab # real Chromium/Chrome for Testing: an attachment is grabbed
 npm run test:ui          # web UI modules against a DOM shim (rendering, filters, ids)
 npm run test:e2e         # a fresh app, a real download, a restart, a second instance
 npm run test:integration # pause/resume, batch, no-Range fallback, speed limit
@@ -404,13 +502,23 @@ npm run test:installer   # CRX3 signing, ZIP, extension builds, installer dry-ru
 npm run bench            # 1 vs 16 connections on a throttled local server
 ```
 
+`npm run test:chrome-grab` is the only suite that starts a browser. It uses
+Chromium or Chrome for Testing (including Playwright's bundled Chromium) because
+branded Chrome 137+ ignores `--load-extension`; set `DLX_CHROME_PATH` to choose a
+specific executable. It needs Node.js 22+ for the built-in WebSocket CDP client,
+prints `SKIP` and succeeds when no supported browser is installed, and is included
+in `npm run test:all` but not in the browser-free `npm test` run.
+
 ### Releasing
 
 ```bash
 npm run build:exe        # dist/downloadX.exe
+npm run build:desktop    # dist/desktop/downloadX.exe (native window)
+npm run build:all        # both EXEs
 npm run package:manifests # winget + chocolatey, with the real SHA-256
 npm run check:release    # fails if the manifests drifted from the built EXE
-gh release create v1.4.0 dist/downloadX.exe --notes-file CHANGELOG.md
+Copy-Item dist/desktop/downloadX.exe dist/desktop/downloadX-desktop.exe
+gh release create v1.5.0 dist/downloadX.exe dist/desktop/downloadX-desktop.exe --notes-file CHANGELOG.md
 ```
 
 `npm run check:release` compares the checksum in the winget and Chocolatey
@@ -436,7 +544,9 @@ CI runs the full matrix (Windows + Linux, Node 18/20/22/24) on every push and PR
 - Requires Node.js 18+ (tested on 24). No npm install, ever. The installer checks for
   Node and can install the LTS release with `install.bat -InstallNode` (winget). The
   standalone `dist\downloadX.exe` (`npm run build:exe`) needs nothing installed — it
-  bundles its own runtime.
+  bundles its own runtime. The desktop `dist\desktop\downloadX.exe`
+  (`npm run build:desktop`) also bundles the engine and needs only the Microsoft Edge
+  WebView2 Runtime that ships with Windows 11.
 - True silent extension install on stock (non-domain) Chrome/Edge requires published store
   IDs; that is a browser platform restriction, not a downloadX limitation. Without them,
   the installer prepares everything and you load the extension once manually.

@@ -162,7 +162,7 @@ const MEDIA = [
     const mock = makeBrowser(flavour, state);
     globalThis.chrome = mock.chrome || undefined;
     globalThis.browser = mock.browser || undefined;
-    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, version: '1.4.0' }) });
+    globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ ok: true, version: '1.5.0' }) });
     const optionsSrc = fs.readFileSync(path.join(ROOT, 'extension', 'options.js'), 'utf8');
     // eslint-disable-next-line no-new-func
     new Function('window', 'document', 'globalThis', 'fetch', 'Notification', optionsSrc)(

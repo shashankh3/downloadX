@@ -1,8 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0d0d0f">
 <title data-i18n="downloadX">downloadX</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
@@ -14,39 +15,33 @@
   <aside class="sidebar">
     <div class="brand">
       <div class="brand-logo"><svg viewBox="0 0 24 24"><path d="M13 2 4.5 13.5H11L9.5 22 19 10h-6.5L13 2z"/></svg></div>
-      <div class="brand-text">
-        <span class="brand-name">download<b>X</b></span>
-        <span class="brand-sub" data-i18n="Download Manager">Download Manager</span>
-      </div>
+      <div class="brand-text"><span class="brand-name">download<b>X</b></span></div>
     </div>
 
-    <nav id="nav-views" aria-label="Download views">
-      <div class="nav-label" aria-hidden="true" data-i18n="Downloads">Downloads</div>
-      <button class="nav-item active" data-view="all"><span class="nav-ico" data-ico="all"></span><span class="nav-text" data-i18n="All">All</span><span class="nav-count" data-count="view-all">0</span></button>
-      <button class="nav-item" data-view="downloading"><span class="nav-ico" data-ico="down"></span><span class="nav-text" data-i18n="Downloading">Downloading</span><span class="nav-count" data-count="view-downloading">0</span></button>
-      <button class="nav-item" data-view="waiting"><span class="nav-ico" data-ico="clock"></span><span class="nav-text" data-i18n="Waiting">Waiting</span><span class="nav-count" data-count="view-waiting">0</span></button>
-      <button class="nav-item" data-view="completed"><span class="nav-ico" data-ico="check"></span><span class="nav-text" data-i18n="Completed">Completed</span><span class="nav-count" data-count="view-completed">0</span></button>
-      <button class="nav-item" data-view="failed"><span class="nav-ico" data-ico="xcirc"></span><span class="nav-text" data-i18n="Failed">Failed</span><span class="nav-count" data-count="view-failed">0</span></button>
+    <nav id="nav-views" class="nav" aria-label="Download views">
+      <button class="nav-item active" data-view="all" title="All downloads"><span class="nav-ico" data-ico="all"></span><span class="nav-text" data-i18n="All">All</span><span class="nav-count" data-count="view-all">0</span></button>
+      <button class="nav-item" data-view="downloading" title="Active downloads"><span class="nav-ico" data-ico="down"></span><span class="nav-text" data-i18n="Active">Active</span><span class="nav-count" data-count="view-downloading">0</span></button>
+      <button class="nav-item" data-view="waiting" title="Waiting downloads"><span class="nav-ico" data-ico="clock"></span><span class="nav-text" data-i18n="Waiting">Waiting</span><span class="nav-count" data-count="view-waiting">0</span></button>
+      <button class="nav-item" data-view="completed" title="Completed downloads"><span class="nav-ico" data-ico="check"></span><span class="nav-text" data-i18n="Done">Done</span><span class="nav-count" data-count="view-completed">0</span></button>
+      <button class="nav-item" data-view="failed" title="Failed downloads"><span class="nav-ico" data-ico="xcirc"></span><span class="nav-text" data-i18n="Failed">Failed</span><span class="nav-count" data-count="view-failed">0</span></button>
     </nav>
 
-    <nav id="nav-cats" aria-label="Categories">
-      <div class="nav-label" aria-hidden="true" data-i18n="Categories">Categories</div>
-      <button class="nav-item active" data-cat="all"><span class="nav-ico" data-ico="folder"></span><span class="nav-text" data-i18n="All categories">All categories</span><span class="nav-count" data-count="cat-all">0</span></button>
-      <button class="nav-item" data-cat="Programs"><span class="nav-cat c-program" data-ico="program"></span><span class="nav-text" data-i18n="Programs">Programs</span><span class="nav-count" data-count="cat-Programs">0</span></button>
-      <button class="nav-item" data-cat="Compressed"><span class="nav-cat c-archive" data-ico="archive"></span><span class="nav-text" data-i18n="Compressed">Compressed</span><span class="nav-count" data-count="cat-Compressed">0</span></button>
-      <button class="nav-item" data-cat="Video"><span class="nav-cat c-video" data-ico="film"></span><span class="nav-text" data-i18n="Video">Video</span><span class="nav-count" data-count="cat-Video">0</span></button>
-      <button class="nav-item" data-cat="Music"><span class="nav-cat c-music" data-ico="music"></span><span class="nav-text" data-i18n="Music">Music</span><span class="nav-count" data-count="cat-Music">0</span></button>
-      <button class="nav-item" data-cat="Documents"><span class="nav-cat c-doc" data-ico="doc"></span><span class="nav-text" data-i18n="Documents">Documents</span><span class="nav-count" data-count="cat-Documents">0</span></button>
-      <button class="nav-item" data-cat="Images"><span class="nav-cat c-image" data-ico="image"></span><span class="nav-text" data-i18n="Images">Images</span><span class="nav-count" data-count="cat-Images">0</span></button>
-      <button class="nav-item" data-cat="Others"><span class="nav-cat c-box" data-ico="box"></span><span class="nav-text" data-i18n="Others">Others</span><span class="nav-count" data-count="cat-Others">0</span></button>
+    <div class="side-sep" aria-hidden="true"></div>
+
+    <nav id="nav-cats" class="nav cats" aria-label="Categories">
+      <button class="nav-item active" data-cat="all" title="All categories" aria-label="All categories"><span class="nav-ico" data-ico="folder"></span></button>
+      <button class="nav-item" data-cat="Programs" title="Programs" aria-label="Programs"><span class="nav-cat c-program" data-ico="program"></span></button>
+      <button class="nav-item" data-cat="Compressed" title="Compressed" aria-label="Compressed"><span class="nav-cat c-archive" data-ico="archive"></span></button>
+      <button class="nav-item" data-cat="Video" title="Video" aria-label="Video"><span class="nav-cat c-video" data-ico="film"></span></button>
+      <button class="nav-item" data-cat="Music" title="Music" aria-label="Music"><span class="nav-cat c-music" data-ico="music"></span></button>
+      <button class="nav-item" data-cat="Documents" title="Documents" aria-label="Documents"><span class="nav-cat c-doc" data-ico="doc"></span></button>
+      <button class="nav-item" data-cat="Images" title="Images" aria-label="Images"><span class="nav-cat c-image" data-ico="image"></span></button>
+      <button class="nav-item" data-cat="Others" title="Others" aria-label="Others"><span class="nav-cat c-box" data-ico="box"></span></button>
     </nav>
 
     <div class="side-foot">
-      <div class="side-button-row">
-        <button class="side-setting" id="btn-settings"><span class="nav-ico" data-ico="gear"></span><span class="nav-text" data-i18n="Settings">Settings</span></button>
-        <button class="side-setting" id="btn-theme" title="Switch between light and dark mode"><span class="nav-ico" data-ico="moon"></span><span class="nav-text" id="theme-label" data-i18n="Dark mode">Dark mode</span></button>
-      </div>
-      <div class="side-version" id="side-version">downloadX</div>
+      <button class="side-setting" id="btn-settings" title="Settings"><span class="nav-ico" data-ico="gear"></span><span class="nav-text" data-i18n="Settings">Settings</span></button>
+      <div class="side-version" id="side-version"></div>
     </div>
   </aside>
 
@@ -54,64 +49,64 @@
     <header class="topbar">
       <div class="view-info">
         <h1 id="view-title" data-i18n="All downloads">All downloads</h1>
-        <span id="view-sub" class="view-sub">0 items</span>
+        <span id="view-sub" class="view-sub">0</span>
       </div>
-      <input id="search" class="input search" type="search" placeholder="Search…  (Ctrl+F)" aria-label="Search downloads">
-      <div class="speed-widget" title="Total speed across all transfers">
-        <canvas id="spark" width="150" height="36" aria-hidden="true"></canvas>
-        <div class="speed-num" aria-label="Total speed"><b id="global-speed">0 B</b><i data-i18n="/s">/s</i></div>
+      <div class="search-wrap">
+        <span class="search-ico" data-ico="search"></span>
+        <input id="search" class="input search" type="search" placeholder="Search" aria-label="Search downloads">
+      </div>
+      <div class="speed-widget" title="Total speed">
+        <canvas id="spark" width="110" height="28" aria-hidden="true"></canvas>
+        <div class="speed-num" aria-label="Total speed"><b id="global-speed">0 B</b><i>/s</i></div>
       </div>
       <div class="top-actions">
-        <select id="sort" class="input select sort-select" title="Sort order" aria-label="Sort downloads">
+        <select id="sort" class="input select sort-select" title="Sort" aria-label="Sort downloads">
           <option value="status">Status</option>
-          <option value="date">Date added</option>
+          <option value="date">Date</option>
           <option value="name">Name</option>
           <option value="size">Size</option>
           <option value="speed">Speed</option>
         </select>
-        <button class="btn ghost" id="btn-pause-all" title="Pause everything"><span class="ic" data-ico="pause"></span><span class="btn-label" data-i18n="Pause all">Pause all</span></button>
-        <button class="btn ghost" id="btn-resume-all" title="Resume everything"><span class="ic" data-ico="play"></span><span class="btn-label" data-i18n="Resume all">Resume all</span></button>
-        <button class="btn ghost" id="btn-retry-failed" title="Retry every failed download" hidden><span class="ic" data-ico="retry"></span><span class="btn-label" data-i18n="Retry failed">Retry failed</span></button>
-        <button class="btn ghost" id="btn-clear" title="Remove completed and failed items from the list"><span class="ic" data-ico="trash"></span><span class="btn-label" data-i18n="Clear">Clear</span></button>
-        <button class="btn primary" id="btn-add"><span class="ic" data-ico="plus"></span><span class="btn-label" data-i18n="New download">New download</span></button>
+        <button class="icon-btn" id="btn-pause-all" title="Pause all"><span class="ic" data-ico="pause"></span></button>
+        <button class="icon-btn" id="btn-resume-all" title="Resume all"><span class="ic" data-ico="play"></span></button>
+        <button class="icon-btn" id="btn-retry-failed" title="Retry failed" hidden><span class="ic" data-ico="retry"></span></button>
+        <button class="icon-btn" id="btn-clear" title="Clear finished"><span class="ic" data-ico="trash"></span></button>
+        <button class="btn primary add-btn" id="btn-add" title="New download"><span class="ic" data-ico="plus"></span><span class="btn-label">Add</span></button>
       </div>
     </header>
 
     <div class="content">
       <div id="shutdown-banner" class="banner hidden">
         <span class="ic" data-ico="alert"></span>
-        <span>All downloads finished — <b>system shutdown in <span id="shutdown-count">60</span>&nbsp;s</b></span>
-        <button class="btn danger" id="btn-cancel-shutdown" data-i18n="Cancel shutdown">Cancel shutdown</button>
+        <span>Shutdown in <b id="shutdown-count">60</b>s</span>
+        <button class="btn danger" id="btn-cancel-shutdown">Cancel</button>
       </div>
 
       <div id="update-banner" class="banner hidden">
         <span class="ic" data-ico="download"></span>
-        <span>downloadX <b id="update-version"></b> is available.</span>
-        <a class="btn primary" id="update-link" href="#" target="_blank" rel="noopener noreferrer" data-i18n="Get update">Get update</a>
-        <button class="btn ghost" id="update-dismiss" data-i18n="Dismiss">Dismiss</button>
+        <span>Update <b id="update-version"></b></span>
+        <a class="btn primary" id="update-link" href="#" target="_blank" rel="noopener noreferrer">Get</a>
+        <button class="btn ghost" id="update-dismiss">Dismiss</button>
       </div>
 
       <section id="list" class="list" aria-live="polite" tabindex="-1"></section>
 
       <div id="empty" class="empty hidden">
-        <div class="big"><span class="ic" data-ico="download"></span></div>
-        <h2 data-i18n="Nothing here yet">Nothing here yet</h2>
-        <p>Add a URL, paste a link anywhere (Ctrl+V), or drop a link onto this window.<br>
-           Sequential patterns work too: <code>https://site/file[01-12].zip</code></p>
-        <button class="btn primary" id="btn-add-empty"><span class="ic" data-ico="plus"></span>New download</button>
+        <button class="empty-ring" id="btn-add-empty" aria-label="New download">
+          <span class="ic" data-ico="plus"></span>
+          <span class="empty-label">Add</span>
+        </button>
+        <div class="empty-title">No downloads</div>
       </div>
-      <div id="dropzone" class="dropzone hidden"><div><span class="ic" data-ico="download"></span><b>Drop links to download</b></div></div>
+      <div id="dropzone" class="dropzone hidden"><div><span class="ic" data-ico="download"></span><b>Drop links</b></div></div>
     </div>
 
     <footer class="statusbar">
-      <div class="st-left"><span class="st-dot" id="st-dot"></span><span id="st-engine">Engine ready</span></div>
-      <div class="st-right">
-        <span id="st-act">0 active · 0 waiting</span>
-        <span class="st-sep">|</span>
-        <span id="st-conn">0 connections</span>
-        <span class="st-sep">|</span>
-        <span id="st-total">0 completed</span>
-      </div>
+      <span class="st-dot" id="st-dot"></span>
+      <span id="st-act">0 · 0</span>
+      <span id="st-conn" title="Connections">0</span>
+      <span id="st-engine" class="sr-only">Engine ready</span>
+      <span id="st-total" class="sr-only">0</span>
     </footer>
   </main>
 </div>
@@ -120,53 +115,67 @@
 <dialog id="dlg-add" class="dlg" aria-labelledby="add-title">
   <div class="dlg-head">
     <div class="dlg-tile"><span class="ic" data-ico="plus"></span></div>
-    <div><div class="dlg-title" id="add-title" data-i18n="New download">New download</div><div class="dlg-sub" data-i18n="Paste URLs, batch patterns or mirror lists">Paste URLs, batch patterns or mirror lists</div></div>
+    <div class="dlg-title" id="add-title" data-i18n="New download">New download</div>
   </div>
   <div class="dlg-body">
     <label class="field">
-      <span data-i18n="URL(s) — one per line, patterns supported">URL(s) — one per line, patterns supported</span>
-        <textarea id="add-urls" class="input" rows="3" placeholder="https://example.com/file.zip&#10;ftp://mirror.example.com/big.iso&#10;https://site.com/photos/img[01-20].jpg" autofocus></textarea>
+      <span data-i18n="URL(s)">URL(s)</span>
+      <textarea id="add-urls" class="input" rows="3" placeholder="https://example.com/file.zip&#10;https://site.com/photos/img[01-20].jpg" autofocus></textarea>
       <div class="hint" id="add-preview"></div>
       <div class="hint-row">
-        <button class="btn ghost" id="add-grab" type="button"><span class="ic" data-ico="external"></span>Grab links from a page</button>
+        <button class="btn ghost" id="add-grab" type="button"><span class="ic" data-ico="external"></span>Grab links</button>
         <span class="hint" id="add-grab-hint"></span>
       </div>
     </label>
     <div class="grid2">
-      <label class="field"><span data-i18n="Filename (optional, single URL)">Filename (optional, single URL)</span>
-        <input id="add-filename" class="input" placeholder="auto-detect"></label>
+      <label class="field"><span data-i18n="Filename">Filename</span>
+        <input id="add-filename" class="input" placeholder="Auto"></label>
       <label class="field"><span data-i18n="Category">Category</span>
         <select id="add-category" class="input select">
-          <option value="auto">Auto-detect</option>
+          <option value="auto">Auto</option>
           <option>Programs</option><option>Compressed</option><option>Video</option>
           <option>Music</option><option>Documents</option><option>Images</option><option>Others</option>
         </select></label>
       <label class="field"><span>Connections <b id="add-segv">16</b></span>
         <input id="add-segments" type="range" min="1" max="64" value="16"></label>
-      <label class="field"><span data-i18n="Speed limit (KB/s, 0 = none)">Speed limit (KB/s, 0 = none)</span>
+      <label class="field"><span data-i18n="Speed limit">Speed limit (KB/s)</span>
         <input id="add-limit" class="input" type="number" min="0" value="0"></label>
     </div>
     <details class="advanced">
       <summary data-i18n="Advanced">Advanced</summary>
-      <label class="field"><span data-i18n="Mirror URLs (one per line — used automatically if the primary fails)">Mirror URLs (one per line — used automatically if the primary fails)</span>
+      <div class="grid2">
+        <label class="field"><span data-i18n="Priority">Priority</span>
+          <input id="add-priority" class="input" type="number" min="-100" max="100" value="0"></label>
+        <label class="field"><span data-i18n="Wait for">Wait for</span>
+          <select id="add-depends" class="input select"><option value="">None</option></select></label>
+        <label class="field"><span data-i18n="Window start">Window start</span>
+          <input id="add-sched-start" class="input" type="time"></label>
+        <label class="field"><span data-i18n="Window end">Window end</span>
+          <input id="add-sched-end" class="input" type="time"></label>
+        <label class="field span2"><span data-i18n="Days">Days (0–6, blank = every day)</span>
+          <input id="add-sched-days" class="input" placeholder="1,2,3,4,5"></label>
+      </div>
+      <label class="field"><span data-i18n="Mirrors">Mirrors</span>
         <textarea id="add-mirrors" class="input" rows="2" placeholder="https://mirror.example.com/file.zip"></textarea></label>
-      <label class="field"><span data-i18n="Referer (some sites require it)">Referer (some sites require it)</span>
-        <input id="add-referer" class="input" placeholder="https://example.com/page.html"></label>
-      <label class="field"><span>Cookies (e.g. <code>session=abc; theme=dark</code>)</span>
-        <input id="add-cookies" class="input" placeholder="name=value; name2=value2"></label>
-      <label class="field"><span data-i18n="HTTP username (optional)">HTTP username (optional)</span>
-        <input id="add-username" class="input" autocomplete="off" placeholder="Basic or Digest auth user"></label>
-      <label class="field"><span data-i18n="HTTP password (optional)">HTTP password (optional)</span>
-        <input id="add-password" class="input" type="password" autocomplete="new-password" placeholder="Password"></label>
-      <label class="field span2"><span>Proxy (optional — <code>http://</code>, <code>https://</code>, <code>socks5://</code>)</span>
+      <div class="grid2">
+        <label class="field"><span data-i18n="Referer">Referer</span>
+          <input id="add-referer" class="input" placeholder="https://example.com/page"></label>
+        <label class="field"><span data-i18n="Cookies">Cookies</span>
+          <input id="add-cookies" class="input" placeholder="name=value; name2=value2"></label>
+        <label class="field"><span data-i18n="Username">Username</span>
+          <input id="add-username" class="input" autocomplete="off"></label>
+        <label class="field"><span data-i18n="Password">Password</span>
+          <input id="add-password" class="input" type="password" autocomplete="new-password"></label>
+      </div>
+      <label class="field"><span data-i18n="Proxy">Proxy</span>
         <input id="add-proxy" class="input" spellcheck="false" placeholder="http://user:pass@127.0.0.1:8080"></label>
-      <label class="field span2"><span>Custom headers (one per line, <code>Name: value</code>)</span>
-        <textarea id="add-headers" class="input" rows="2" spellcheck="false" placeholder="Authorization: Bearer …&#10;Accept-Language: en-US"></textarea></label>
-      <label class="field"><span data-i18n="Expected checksum (optional — verified when the download finishes)">Expected checksum (optional — verified when the download finishes)</span>
-        <input id="add-checksum" class="input" placeholder="SHA-256 / SHA-1 / MD5 / SHA-512 hash"></label>
-      <label class="field span2"><span data-i18n="Save to custom folder (optional)">Save to custom folder (optional)</span>
-        <input id="add-dir" class="input" placeholder="Defaults to the category folder"></label>
-      <label class="check"><input type="checkbox" id="add-paused"> Add paused (download later)</label>
+      <label class="field"><span data-i18n="Headers">Headers</span>
+        <textarea id="add-headers" class="input" rows="2" spellcheck="false" placeholder="Authorization: Bearer …"></textarea></label>
+      <label class="field"><span data-i18n="Checksum">Checksum</span>
+        <input id="add-checksum" class="input" placeholder="SHA-256 / SHA-1 / MD5"></label>
+      <label class="field"><span data-i18n="Folder">Folder</span>
+        <input id="add-dir" class="input" placeholder="Default"></label>
+      <label class="check"><input type="checkbox" id="add-paused"> Add paused</label>
     </details>
   </div>
   <div class="dlg-foot">
@@ -175,68 +184,103 @@
   </div>
 </dialog>
 
+<!-- Site grabber dialog -->
+<dialog id="dlg-grab" class="dlg dlg-sm" aria-labelledby="grab-title">
+  <div class="dlg-head">
+    <div class="dlg-tile"><span class="ic" data-ico="external"></span></div>
+    <div class="dlg-title" id="grab-title" data-i18n="Grab links">Grab links</div>
+  </div>
+  <div class="dlg-body">
+    <label class="field"><span data-i18n="Page URL">Page URL</span>
+      <input id="grab-url" class="input" placeholder="https://example.com/downloads"></label>
+    <div class="grid2">
+      <label class="field"><span data-i18n="Depth">Depth</span>
+        <input id="grab-depth" class="input" type="number" min="0" max="3" value="0"></label>
+      <label class="field"><span data-i18n="File types">File types</span>
+        <input id="grab-types" class="input" placeholder="zip, exe, pdf"></label>
+    </div>
+    <label class="check"><input type="checkbox" id="grab-same" checked> Same site only</label>
+    <label class="check"><input type="checkbox" id="grab-media"> Include media</label>
+    <div class="hint" id="grab-result"></div>
+  </div>
+  <div class="dlg-foot">
+    <button class="btn ghost" id="grab-cancel" data-i18n="Cancel">Cancel</button>
+    <button class="btn primary" id="grab-run" data-i18n="Grab">Grab</button>
+    <button class="btn primary" id="grab-use" hidden data-i18n="Use links">Use links</button>
+  </div>
+</dialog>
+
 <!-- Settings dialog -->
 <dialog id="dlg-settings" class="dlg" aria-labelledby="settings-title">
   <div class="dlg-head">
     <div class="dlg-tile"><span class="ic" data-ico="gear"></span></div>
-    <div><div class="dlg-title" id="settings-title" data-i18n="Settings">Settings</div><div class="dlg-sub" data-i18n="Engine, folders, schedule and power">Engine, folders, schedule and power</div></div>
+    <div class="dlg-title" id="settings-title" data-i18n="Settings">Settings</div>
   </div>
   <div class="dlg-body">
     <div class="grid2">
       <label class="field span2"><span data-i18n="Download folder">Download folder</span>
         <input id="set-root" class="input" placeholder="C:\Users\you\Downloads"></label>
-      <label class="field"><span data-i18n="Max simultaneous downloads">Max simultaneous downloads</span>
+      <label class="field"><span data-i18n="Simultaneous">Simultaneous</span>
         <input id="set-concurrent" class="input" type="number" min="1" max="20" value="3"></label>
-      <label class="field"><span data-i18n="Max connections (0 = unlimited)">Max connections (0 = unlimited)</span>
+      <label class="field"><span data-i18n="Max connections">Max connections</span>
         <input id="set-maxconnections" class="input" type="number" min="0" max="512" value="64"></label>
-      <label class="field"><span data-i18n="Default connections per file">Default connections per file</span>
+      <label class="field"><span data-i18n="Default connections">Default connections</span>
         <input id="set-segments" class="input" type="number" min="1" max="64" value="16"></label>
-      <label class="field"><span data-i18n="Global speed limit (KB/s, 0 = none)">Global speed limit (KB/s, 0 = none)</span>
+      <label class="field"><span data-i18n="Speed limit">Speed limit (KB/s)</span>
         <input id="set-globallimit" class="input" type="number" min="0" value="0"></label>
-      <label class="field span2"><span data-i18n="Global proxy (optional — used when a download has none)">Global proxy (optional — used when a download has none)</span>
-        <input id="set-proxy" class="input" spellcheck="false" placeholder="http://127.0.0.1:8080, socks5://127.0.0.1:1080"></label>
-      <label class="check span2"><input type="checkbox" id="set-organize"> Sort files into category folders</label>
-      <label class="check span2"><input type="checkbox" id="set-invalid-tls"> Allow invalid TLS certificates (not recommended)</label>
-      <label class="field span2"><span>Update manifest URL (optional — HTTPS JSON with <code>version</code> and <code>url</code>)</span>
-        <input id="set-update-url" class="input" spellcheck="false" placeholder="https://example.com/downloadx-update.json"></label>
-      <label class="field span2"><span data-i18n="Webhook URL (optional — called when a download finishes or fails)">Webhook URL (optional — called when a download finishes or fails)</span>
+      <label class="field"><span data-i18n="Hourly quota">Hourly quota (MB)</span>
+        <input id="set-quota" class="input" type="number" min="0" value="0"></label>
+      <label class="field span2"><span data-i18n="Proxy">Proxy</span>
+        <input id="set-proxy" class="input" spellcheck="false" placeholder="http://127.0.0.1:8080"></label>
+      <label class="check span2"><input type="checkbox" id="set-organize"> Category folders</label>
+      <label class="check span2"><input type="checkbox" id="set-invalid-tls"> Allow invalid TLS</label>
+      <label class="field span2"><span data-i18n="Update manifest">Update manifest</span>
+        <input id="set-update-url" class="input" spellcheck="false" placeholder="https://example.com/update.json"></label>
+      <label class="field span2"><span data-i18n="Webhook">Webhook</span>
         <input id="set-webhook" class="input" spellcheck="false" placeholder="https://example.com/hooks/downloadx"></label>
       <div class="field span2 hint-row">
-        <span id="set-freespace">Free space on the download volume: —</span>
+        <span id="set-freespace">Free: —</span>
         <button class="btn ghost" id="set-refresh-space" type="button" data-i18n="Refresh">Refresh</button>
       </div>
     </div>
     <fieldset class="fieldset">
-      <legend data-i18n="Schedule — download only inside this window">Schedule — download only inside this window</legend>
+      <legend data-i18n="Schedule">Schedule</legend>
       <label class="check"><input type="checkbox" id="set-sched-enabled"> Enable schedule</label>
       <div class="grid2">
-        <label class="field"><span data-i18n="From (HH:MM)">From (HH:MM)</span><input id="set-sched-from" class="input" type="time" value="23:00"></label>
-        <label class="field"><span data-i18n="To (HH:MM)">To (HH:MM)</span><input id="set-sched-to" class="input" type="time" value="07:00"></label>
+        <label class="field"><span data-i18n="From">From</span><input id="set-sched-from" class="input" type="time" value="23:00"></label>
+        <label class="field"><span data-i18n="To">To</span><input id="set-sched-to" class="input" type="time" value="07:00"></label>
       </div>
     </fieldset>
     <fieldset class="fieldset">
       <legend data-i18n="Reliability">Reliability</legend>
-      <label class="field"><span data-i18n="Retries per download before it is marked as failed">Retries per download before it is marked as failed</span>
+      <label class="field"><span data-i18n="Retries">Retries</span>
         <input id="set-maxretries" class="input" type="number" min="1" max="100" value="12"></label>
-      <label class="check"><input type="checkbox" id="set-avscan"> Scan finished downloads with Microsoft Defender</label>
-      <label class="check"><input type="checkbox" id="set-mow"> Mark downloads as coming from the internet (Windows SmartScreen)</label>
+      <label class="check"><input type="checkbox" id="set-avscan"> Scan with Defender</label>
+      <label class="check"><input type="checkbox" id="set-mow"> Mark as internet file</label>
+    </fieldset>
+    <fieldset class="fieldset">
+      <legend data-i18n="Library">Library</legend>
+      <div class="hint-row">
+        <button class="btn ghost" id="set-export" type="button"><span class="ic" data-ico="export"></span>Export list</button>
+        <button class="btn ghost" id="set-import" type="button"><span class="ic" data-ico="import"></span>Import list</button>
+        <input id="set-import-file" type="file" accept=".json,application/json" hidden>
+      </div>
     </fieldset>
     <fieldset class="fieldset">
       <legend data-i18n="Language">Language</legend>
-      <label class="field"><span data-i18n="Interface language">Interface language</span>
+      <label class="field"><span data-i18n="Interface language">Language</span>
         <select id="set-language" class="input select"></select></label>
     </fieldset>
     <fieldset class="fieldset">
       <legend data-i18n="Notifications">Notifications</legend>
-      <label class="check"><input type="checkbox" id="set-notify"> Notify when downloads finish</label>
-      <label class="check"><input type="checkbox" id="set-notify-sound"> Play a sound when downloads finish</label>
+      <label class="check"><input type="checkbox" id="set-notify"> Notify when done</label>
+      <label class="check"><input type="checkbox" id="set-notify-sound"> Sound</label>
     </fieldset>
     <fieldset class="fieldset">
       <legend data-i18n="Browser integration">Browser integration</legend>
-      <p class="hint" data-i18n="Send links and browser downloads straight to downloadX. The Windows installer sets this up automatically.">Send links and browser downloads straight to downloadX. The Windows installer sets this up automatically.</p>
       <button class="btn ghost" id="set-extension" type="button"><span class="ic" data-ico="link"></span>Install browser extension</button>
     </fieldset>
-    <label class="check danger"><input type="checkbox" id="set-shutdown"> Shut down computer when all downloads finish</label>
+    <label class="check danger"><input type="checkbox" id="set-shutdown"> Shut down when all downloads finish</label>
   </div>
   <div class="dlg-foot">
     <button class="btn ghost" id="set-cancel" data-i18n="Cancel">Cancel</button>
@@ -248,7 +292,7 @@
 <dialog id="dlg-shortcuts" class="dlg dlg-sm" aria-labelledby="shortcuts-title">
   <div class="dlg-head">
     <div class="dlg-tile"><span class="ic" data-ico="help"></span></div>
-    <div><div class="dlg-title" id="shortcuts-title" data-i18n="Keyboard shortcuts">Keyboard shortcuts</div><div class="dlg-sub" data-i18n="Everything you can do without the mouse">Everything you can do without the mouse</div></div>
+    <div class="dlg-title" id="shortcuts-title" data-i18n="Keyboard shortcuts">Keyboard shortcuts</div>
   </div>
   <div class="dlg-body">
     <ul id="shortcut-list" class="shortcut-list"></ul>

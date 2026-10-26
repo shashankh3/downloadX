@@ -6,10 +6,9 @@
 import { $, toast, confirmDlg, setNav, injectIcons } from './dom.mjs';
 import { api, connect } from './api.mjs';
 import { ui } from './store.mjs';
-import { I } from './icons.mjs';
 import { initLanguage, t } from './i18n.mjs';
 import { applySnapshot, renderList, refreshViewTitle, setConfirmDialog } from './list.mjs';
-import { openAdd, initAddDialog, initSettingsDialog } from './dialogs.mjs';
+import { openAdd, initAddDialog, initSettingsDialog, initGrabDialog } from './dialogs.mjs';
 
 setConfirmDialog(confirmDlg);
 
@@ -130,27 +129,6 @@ document.addEventListener('paste', (e) => {
   if (url) openAdd(url);
 });
 
-/* ---------------- theme ---------------- */
-
-const THEME_KEY = 'dlx-theme';
-function applyTheme(theme) {
-  const dark = theme === 'dark';
-  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  const btn = $('#btn-theme');
-  if (!btn) return;
-  btn.querySelector('.nav-ico').innerHTML = dark ? I.sun : I.moon;
-  $('#theme-label').textContent = dark ? 'Light mode' : 'Dark mode';
-  btn.title = dark ? 'Switch to the light theme' : 'Switch to the dark theme';
-}
-let savedTheme = 'light';
-try { savedTheme = localStorage.getItem(THEME_KEY) || 'light'; } catch { /* private mode */ }
-applyTheme(savedTheme === 'dark' ? 'dark' : 'light');
-$('#btn-theme').addEventListener('click', () => {
-  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
-  try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode */ }
-  applyTheme(next);
-});
-
 /* ---------------- update check ---------------- */
 
 async function checkUpdates() {
@@ -177,6 +155,7 @@ async function checkUpdates() {
 initLanguage();
 injectIcons();
 initAddDialog();
+initGrabDialog();
 initSettingsDialog();
 setNav('#nav-views', 'view', ui.view);
 setNav('#nav-cats', 'cat', ui.cat);

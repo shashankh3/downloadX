@@ -95,6 +95,8 @@ function rowSignature(it) {
     it.activeConnections, it.stream || '',
     it.segments ? it.segments.length : 0,
     it.checksum ? it.checksum.at : 0,
+    it.priority, it.dependsOn, it.blockedBy, it.url,
+    JSON.stringify(it.schedule || null),
     ui.expanded.has(it.id) ? 'x' : '-',
   ].join('|');
 }

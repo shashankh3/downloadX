@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "downloadX Connector",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Send links, media and browser downloads to downloadX (localhost).",
   "permissions": ["contextMenus", "downloads", "cookies", "storage", "activeTab", "nativeMessaging", "webRequest"],
   "host_permissions": ["http://127.0.0.1/*", "http://localhost/*", "*://*/*"],

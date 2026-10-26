@@ -1,6 +1,6 @@
 {
   "name": "downloadx",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Fast, zero-dependency segmented download manager with a local web UI and REST/SSE API.",
   "main": "server.js",
   "bin": "server.js",
@@ -9,6 +9,8 @@
   "scripts": {
     "start": "node server.js",
     "build:exe": "node installer/build-exe.mjs",
+    "build:desktop": "node installer/build-desktop.mjs",
+    "build:all": "npm run build:exe && npm run build:desktop",
     "build:extension": "node installer/prepare-extension.mjs --out extension",
     "package:manifests": "node installer/make-packages.mjs",
     "lint": "node scripts/lint.mjs",
@@ -21,6 +23,7 @@
     "test:e2e": "node test/e2e.test.mjs",
     "test:extension:e2e": "node test/extension-e2e.test.mjs",
     "test:extension:ui": "node test/extension-ui.test.mjs",
+    "test:chrome-grab": "node test/chrome-grab.test.mjs",
     "test:net": "node test/net.test.mjs",
     "test:streams": "node test/streams.test.mjs",
     "test:integration": "node test/run-tests.mjs",
@@ -29,7 +32,7 @@
     "test:extension": "node test/extension.test.mjs",
     "test:ui": "node test/ui.test.mjs",
     "test:installer": "node test/installer.test.mjs",
-    "test:all": "node test/self-test.mjs && node test/units.test.mjs && node test/api.test.mjs && node test/net.test.mjs && node test/streams.test.mjs && node test/ftp.test.mjs && node test/extension.test.mjs && node test/extension-e2e.test.mjs && node test/extension-ui.test.mjs && node test/ui.test.mjs && node test/e2e.test.mjs && node test/run-tests.mjs && node test/local-test.mjs && node test/installer.test.mjs",
+    "test:all": "node test/self-test.mjs && node test/units.test.mjs && node test/api.test.mjs && node test/net.test.mjs && node test/streams.test.mjs && node test/ftp.test.mjs && node test/extension.test.mjs && node test/extension-e2e.test.mjs && node test/extension-ui.test.mjs && node test/ui.test.mjs && node test/e2e.test.mjs && node test/run-tests.mjs && node test/local-test.mjs && node test/installer.test.mjs && node test/chrome-grab.test.mjs",
     "bench": "node test/bench.mjs",
     "debug:resume": "node test/debug-resume.mjs"
   },
