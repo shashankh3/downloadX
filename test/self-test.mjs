@@ -16,6 +16,7 @@ const { crc32: zipCrc32 } = require('../lib/zip.js');
 const { expandPattern, expandPatternDetailed } = require('../lib/patterns.js');
 const { TokenBucket } = require('../lib/bucket.js');
 const store = require('../lib/store.js');
+const { HostGate } = require('../lib/hostgate.js');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-selftest-'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -592,10 +593,65 @@ const URL_BASE = `http://127.0.0.1:${port}`;
   const d = engine.add({ urls: [`http://127.0.0.1:${srvC.address().port}/conn.bin`], segments: 16 });
   const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 90000);
   check('connections: download still completes under the limit', done.status === 'completed', done.error);
+  check('connections: no internal reference error', !/is not defined/.test(done.error || ''), done.error || 'clean');
   check('connections: never exceeds the global limit', peak <= 2, `peak ${peak}`);
   check('connections: limit is reported', engine.activeConnections() >= 0);
   engine.close();
   srvC.close();
+}
+
+/* ---------------- transient HTTP errors ---------------- */
+{
+  const blob = crypto.randomBytes(512 * 1024);
+  const blobHash = sha256(blob);
+  let probeFailed = false;
+  let rangeLimited = false;
+  let requests = 0;
+  const srvR = await makeServer((req, res) => {
+    requests++;
+    const range = req.headers.range || '';
+    const isProbe = /^bytes=0-0$/.test(range);
+    // One 503 on the probe and one 429 on a real range: both must be retried
+    // instead of failing the download or falling back to a single stream.
+    if (isProbe && !probeFailed) {
+      probeFailed = true;
+      res.writeHead(503, { 'Retry-After': '0', 'Content-Length': '0' });
+      return res.end();
+    }
+    if (!isProbe && !rangeLimited) {
+      rangeLimited = true;
+      res.writeHead(429, { 'Retry-After': '0', 'Content-Length': '0' });
+      return res.end();
+    }
+    const m = /bytes=(\d+)-(\d*)/.exec(range);
+    let start = 0;
+    let end = blob.length - 1;
+    if (m) {
+      start = parseInt(m[1], 10);
+      if (m[2]) end = Math.min(parseInt(m[2], 10), blob.length - 1);
+    }
+    res.writeHead(m ? 206 : 200, {
+      'Content-Type': 'application/octet-stream',
+      'Content-Length': String(end - start + 1),
+      'Accept-Ranges': 'bytes',
+      ...(m ? { 'Content-Range': `bytes ${start}-${end}/${blob.length}` } : {}),
+    });
+    res.end(blob.subarray(start, end + 1));
+  });
+  const engine = new Engine(path.join(TMP, 'engine-retry'));
+  engine.settings.rootDir = path.join(TMP, 'files-retry');
+  engine.settings.maxRetries = 5;
+  // Keep the regression test fast: the production default is two seconds.
+  engine.hostGate = new HostGate({ defaultCooldownMs: 20, maxCooldownMs: 100 });
+  const d = engine.add({ urls: [`http://127.0.0.1:${srvR.address().port}/retry.bin`], segments: 4 });
+  const done = await waitFor(() => ['completed', 'failed'].includes(d.status) ? d : null, 30000);
+  check('retry: a 503 probe is retried', probeFailed === true);
+  check('retry: a 429 range is retried', rangeLimited === true);
+  check('retry: the download completes after transient errors', done.status === 'completed', done.error);
+  check('retry: the retried file is byte-perfect', (await hashFile(done.finalPath)) === blobHash);
+  check('retry: every attempt reached the server', requests >= 3, String(requests));
+  engine.close();
+  srvR.close();
 }
 
 /* ---------------- settings hardening ---------------- */

@@ -487,6 +487,22 @@ dialog[open] { animation: dlgIn .16s ease-out; }
 
 /* ---------------- responsive ---------------- */
 
+/*
+ * Respect the operating system's "reduce motion" setting (WCAG 2.2 SC 2.3.3).
+ * The pulse on active segments and the toast/dialog entrances are decorative;
+ * every state is also conveyed by colour and text.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 @media (max-width: 1040px) {
   .speed-widget #spark { display: none; }
   .search-wrap { max-width: 240px; }

@@ -15,6 +15,10 @@ const { TokenBucket } = require('../lib/bucket.js');
 const store = require('../lib/store.js');
 const categories = require('../lib/categories.js');
 const util = require('../lib/util.js');
+const retry = require('../lib/retry.js');
+const { HostGate, originOf } = require('../lib/hostgate.js');
+const { ifRangeHeader } = require('../lib/httpget.js');
+const agents = require('../lib/agents.js');
 
 const results = [];
 function check(name, ok, extra = '') {
@@ -394,6 +398,108 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   check('zip: the crc of a known string is right', zip.crc32(Buffer.from('123456789')) === 0xcbf43926, zip.crc32(Buffer.from('123456789')).toString(16));
   const ranges = zip.entryRanges([index.entries[0]]);
   check('zip: an entry range is computed', ranges.length === 1 && ranges[0].end >= ranges[0].start, JSON.stringify(ranges));
+}
+
+/* ---------------- lib/retry.js ---------------- */
+{
+  check('retry: Retry-After seconds are milliseconds', retry.parseRetryAfter('2') === 2000);
+  check('retry: a missing Retry-After is zero', retry.parseRetryAfter(null) === 0);
+  const now = Date.parse('2026-01-01T00:00:00Z');
+  const date = new Date(now + 5000).toUTCString();
+  check('retry: an HTTP-date Retry-After is relative to now', retry.parseRetryAfter(date, now) === 5000);
+  check('retry: a date in the past is zero', retry.parseRetryAfter('Thu, 01 Jan 1970 00:00:00 GMT', now) === 0);
+
+  const limited = retry.statusError(429, { 'retry-after': '3' }, 'https://example.com/f');
+  check('retry: 429 is rate limited and retryable', limited.rateLimited && limited.retryable && !limited.fatal);
+  check('retry: 429 keeps Retry-After', limited.retryAfter === 3000, String(limited.retryAfter));
+  check('retry: 503 is retryable', retry.statusError(503).retryable === true);
+  const missing = retry.statusError(404);
+  check('retry: 404 is fatal and not retryable', missing.fatal === true && !missing.retryable);
+  check('retry: 408 is retryable', retry.isRetryableStatus(408) === true);
+  check('retry: 501 is not retryable', retry.isRetryableStatus(501) === false);
+  check('retry: a reset socket is transient', retry.isTransientError({ code: 'ECONNRESET' }) === true);
+  check('retry: a temporary DNS failure is transient', retry.isTransientError({ code: 'EAI_AGAIN' }) === true);
+  check('retry: an unknown host is not transient', retry.isTransientError({ code: 'ENOTFOUND' }) === false);
+  check('retry: an abort is not transient', retry.isTransientError({ name: 'AbortError' }) === false);
+  check('retry: a fatal error is not transient', retry.isTransientError({ fatal: true, code: 'ECONNRESET' }) === false);
+  check('retry: an unknown plain error is not transient', retry.isTransientError(new Error('parse failed')) === false);
+}
+
+/* ---------------- lib/hostgate.js ---------------- */
+{
+  let now = 1000;
+  const gate = new HostGate({ now: () => now, defaultCooldownMs: 2000, maxCooldownMs: 5000 });
+  check('hostgate: origin is extracted', originOf('https://example.com:8443/a/b?c=1') === 'https://example.com:8443');
+  check('hostgate: an invalid URL has no origin', originOf('not a url') === '');
+  check('hostgate: a missing delay uses the default', gate.penalize('https://a.example/x') === 2000);
+  check('hostgate: the origin is held for the delay', gate.remaining('https://a.example/y') === 2000);
+  check('hostgate: other origins stay free', gate.remaining('https://b.example/x') === 0);
+  now += 500;
+  check('hostgate: the remaining time shrinks', gate.remaining('https://a.example/x') === 1500);
+  check('hostgate: a shorter delay cannot shorten the hold', gate.penalize('https://a.example/x', 1000) === 1000
+    && gate.remaining('https://a.example/x') === 1500);
+  check('hostgate: the delay is capped', gate.penalize('https://a.example/x', 999999) === 5000
+    && gate.remaining('https://a.example/x') === 5000);
+  now += 5000;
+  check('hostgate: the hold expires', gate.remaining('https://a.example/x') === 0);
+  check('hostgate: an invalid URL is ignored', gate.penalize('nope') === 0);
+  gate.penalize('https://a.example/x');
+  gate.clear();
+  check('hostgate: clear releases every origin', gate.remaining('https://a.example/x') === 0);
+}
+
+/* ---------------- lib/util.js: promoteFile ---------------- */
+{
+  const src = path.join(TMP, 'promote-src.bin');
+  const dst = path.join(TMP, 'promote-dst.bin');
+  fs.writeFileSync(src, 'fresh bytes');
+  check('util: promoteFile creates the destination', util.promoteFile(src, dst) === true);
+  check('util: promoteFile moves the bytes', fs.readFileSync(dst, 'utf8') === 'fresh bytes');
+  check('util: promoteFile removes the source', !fs.existsSync(src));
+
+  const src2 = path.join(TMP, 'promote-src2.bin');
+  fs.writeFileSync(src2, 'other bytes');
+  check('util: promoteFile refuses to clobber', util.promoteFile(src2, dst) === false);
+  check('util: the existing destination is untouched', fs.readFileSync(dst, 'utf8') === 'fresh bytes');
+  check('util: the refused source is kept', fs.readFileSync(src2, 'utf8') === 'other bytes');
+
+  // Volumes without hard links fall back to a checked rename.
+  const src3 = path.join(TMP, 'promote-src3.bin');
+  const dst3 = path.join(TMP, 'promote-dst3.bin');
+  fs.writeFileSync(src3, 'fallback bytes');
+  const realLink = fs.linkSync;
+  fs.linkSync = () => { throw Object.assign(new Error('no hard links'), { code: 'ENOTSUP' }); };
+  try {
+    check('util: promoteFile falls back without hard links', util.promoteFile(src3, dst3) === true);
+    check('util: the fallback moves the bytes', fs.readFileSync(dst3, 'utf8') === 'fallback bytes');
+    const src4 = path.join(TMP, 'promote-src4.bin');
+    fs.writeFileSync(src4, 'later bytes');
+    check('util: the fallback still refuses to clobber', util.promoteFile(src4, dst3) === false);
+    check('util: the fallback keeps the source on collision', fs.readFileSync(src4, 'utf8') === 'later bytes');
+  } finally {
+    fs.linkSync = realLink;
+  }
+}
+
+/* ---------------- lib/httpget.js: If-Range ---------------- */
+{
+  check('if-range: a strong ETag is used as-is', ifRangeHeader('"abc"', 'yesterday') === '"abc"');
+  check('if-range: a weak ETag falls back to Last-Modified', ifRangeHeader('W/"abc"', 'Wed, 21 Oct 2015 07:28:00 GMT') === 'Wed, 21 Oct 2015 07:28:00 GMT');
+  check('if-range: a weak ETag alone is omitted', ifRangeHeader('W/"abc"', '') === '');
+  check('if-range: without an ETag the date is used', ifRangeHeader('', 'Wed, 21 Oct 2015 07:28:00 GMT') === 'Wed, 21 Oct 2015 07:28:00 GMT');
+  check('if-range: no validator gives an empty header', ifRangeHeader('', '') === '');
+}
+
+/* ---------------- lib/agents.js: connection budget ---------------- */
+{
+  check('agents: a zero budget means unlimited', agents.configureAgents(0) === Infinity);
+  check('agents: the HTTP agent is unlimited', agents.httpAgent.maxSockets === Infinity);
+  check('agents: the HTTPS agent is unlimited', agents.httpsAgent.maxSockets === Infinity);
+  check('agents: a numeric budget is applied', agents.configureAgents(128) === 128);
+  check('agents: maxSockets follows the budget', agents.httpAgent.maxSockets === 128 && agents.httpsAgent.maxSockets === 128);
+  check('agents: free sockets stay bounded', agents.httpAgent.maxFreeSockets === 16);
+  check('agents: an invalid budget means unlimited', agents.configureAgents('nope') === Infinity);
+  agents.configureAgents(64);
 }
 
 /* ---------------- report ---------------- */

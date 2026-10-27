@@ -32,6 +32,8 @@ lib/
   download.js        one download: state, segments, worker loop, lifecycle
   transfer.js        HTTP range transfer: probe, connection slots, byte pump
   stream.js          HLS / DASH capture: playlists, parts, AES-128
+  retry.js           shared retry policy: transient statuses, Retry-After, back-off
+  hostgate.js        per-origin cooldown after 429/503 responses
   httpget.js         HTTP client: redirects, ranges, proxies, Basic/Digest auth
   ftp.js             FTP / FTPS client with the same contract as httpget
   streams.js         playlist parsing, AES-128 helpers, part fetching
@@ -106,8 +108,8 @@ defined in the class.
   ranges at all. Mirrors are probed in order.
 * **downloading** — the file is split into segments; workers claim the
   segment with the most bytes left and fetch it in 8 MB chunks.
-* **completed** — the part file is renamed to its final name and the optional
-  checksum is verified.
+* **completed** — the part file is promoted to its final name without ever
+  overwriting an existing file, then the optional checksum is verified.
 
 ### Segment table
 
@@ -167,7 +169,15 @@ shrink automatically when the history grows large.
 
 Two token buckets smooth the bandwidth: one global, one per download. The
 connection budget is a semaphore inside the engine: every socket (probe,
-range request, playlist part) holds a slot for the whole transfer.
+range request, playlist part) holds a slot for the whole transfer. The shared
+agents get the same numeric cap (0 = unlimited) so the HTTP pool cannot
+throttle a larger budget on its own.
+
+Transient failures are retried with exponential back-off and jitter for
+idempotent GETs: 408, 421, 425, 429, 500, 502, 503 and 504. A `Retry-After`
+header is honoured, and 429/503 additionally put the whole origin on a shared
+cooldown (`lib/hostgate.js`) so the other workers stop hammering it. Permanent
+4xx responses, TLS failures and disk errors are never retried.
 
 The scheduler runs on the engine ticker. It applies the global window, each
 download's own window and weekday list, the dependency graph (`dependsOn`,
