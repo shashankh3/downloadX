@@ -336,11 +336,14 @@ server.on('clientError', (err, socket) => {
 });
 
 server.on('error', (e) => {
-  if (e.code === 'EADDRINUSE' && PORT + 1 <= 65535) {
-    console.error(`[downloadX] Port ${PORT} is busy — trying ${PORT + 1}…`);
+  if (e.code === 'EADDRINUSE') {
     if (server.__tries === undefined) server.__tries = 0;
-    if (server.__tries++ < MAX_PORT_TRIES) {
-      server.listen(PORT + server.__tries, HOST);
+    const currentPort = PORT + server.__tries;
+    server.__tries++;
+    const nextPort = PORT + server.__tries;
+    if (server.__tries <= MAX_PORT_TRIES && nextPort <= 65535) {
+      console.error(`[downloadX] Port ${currentPort} is busy — trying ${nextPort}…`);
+      server.listen(nextPort, HOST);
       return;
     }
     console.error(`[downloadX] No free port found. Set DLX_PORT to choose one.`);
