@@ -35,6 +35,8 @@ jobs:
         run: node test/installer.test.mjs
       - name: Engine self-tests
         run: node test/self-test.mjs
+      - name: Engine advanced tests
+        run: node test/engine-advanced.test.mjs
       - name: Unit tests
         run: node test/units.test.mjs
       - name: API + security tests

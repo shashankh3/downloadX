@@ -14,6 +14,8 @@ const protocol = require('../lib/protocol.js');
 const { TokenBucket } = require('../lib/bucket.js');
 const store = require('../lib/store.js');
 const categories = require('../lib/categories.js');
+const naming = require('../lib/naming.js');
+const settings = require('../lib/settings.js');
 const util = require('../lib/util.js');
 const retry = require('../lib/retry.js');
 const { HostGate, originOf } = require('../lib/hostgate.js');
@@ -146,6 +148,27 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   check('store: a corrupt file falls back', store.load(file, 'fallback') === 'fallback');
 }
 
+/* ---------------- lib/naming.js ---------------- */
+{
+  check('sanitize: strips illegal chars', naming.sanitizeName('a<b>c:d"e/f\\g|h?i*j.txt') === 'a_b_c_d_e_f_g_h_i_j.txt');
+  check('sanitize: trims trailing dots/spaces', naming.sanitizeName('name... ') === 'name');
+  check('sanitize: empty -> download', naming.sanitizeName('   ') === 'download');
+  check('sanitize: reserved name prefixed', naming.sanitizeName('CON.txt') === '_CON.txt');
+  check('sanitize: long name keeps extension', (() => {
+    const n = naming.sanitizeName('x'.repeat(300) + '.zip');
+    return n.length <= 180 && n.endsWith('.zip');
+  })());
+  check('hash: normalization strips prefixes', naming.normalizeHash('sha256: ABCDEF') === 'abcdef');
+  check('hash: guess md5', naming.guessAlgo('d41d8cd98f00b204e9800998ecf8427e') === 'md5');
+  check('hash: guess sha256', naming.guessAlgo('a'.repeat(64)) === 'sha256');
+}
+
+/* ---------------- lib/settings.js ---------------- */
+{
+  check('settings: clamps concurrency', settings.normalizeSettings({ maxConcurrent: 999 }).maxConcurrent === 20);
+  check('settings: invalid schedule falls back', settings.normalizeSettings({ scheduleFrom: '99:99' }).scheduleFrom === '23:00');
+  check('settings: resolves rootDir', path.isAbsolute(settings.normalizeSettings({ rootDir: '.' }).rootDir));
+}
 /* ---------------- lib/categories.js ---------------- */
 {
   check('category: extension wins over mime', categories.categoryFor('video/mp4', 'a.bin') === 'Video');
@@ -158,6 +181,7 @@ const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'dlx-units-'));
   check('category: an unknown name becomes auto', categories.normalizeCategory('bogus') === 'auto');
   check('category: auto stays auto', categories.normalizeCategory('auto') === 'auto');
   check('category: the list contains every group', categories.CATEGORY_NAMES.length === 7);
+  check('category: traversal rejected', categories.normalizeCategory('../../evil') === 'auto');
 }
 
 /* ---------------- lib/util.js ---------------- */
